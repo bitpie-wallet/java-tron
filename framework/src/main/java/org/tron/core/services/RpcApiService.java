@@ -22,6 +22,7 @@ import org.tron.api.GrpcAPI.AssetIssueList;
 import org.tron.api.GrpcAPI.BlockExtention;
 import org.tron.api.GrpcAPI.BlockHeaderList;
 import org.tron.api.GrpcAPI.BlockIdList;
+import org.tron.api.GrpcAPI.BlockIndexRange;
 import org.tron.api.GrpcAPI.BlockLimit;
 import org.tron.api.GrpcAPI.BlockList;
 import org.tron.api.GrpcAPI.BlockListExtention;
@@ -1725,6 +1726,43 @@ public class RpcApiService extends RpcService {
 
       if (endNum > 0 && endNum > startNum && endNum - startNum <= BLOCK_ID_LIMIT_NUM) {
         responseObserver.onNext(wallet.getBlockIdsByLimitNext(startNum, endNum - startNum));
+      } else {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("endNum must be greater than startNum and span must be <= "
+                + BLOCK_ID_LIMIT_NUM)
+            .asRuntimeException());
+        return;
+      }
+      responseObserver.onCompleted();
+    }
+
+    @Override
+    public void getBlockIndexByLimitNext(BlockLimit request,
+        StreamObserver<BlockIndexRange> responseObserver) {
+      long startNum = request.getStartNum();
+      long endNum = request.getEndNum();
+
+      if (endNum > 0 && endNum > startNum && endNum - startNum <= BLOCK_ID_LIMIT_NUM) {
+        responseObserver.onNext(wallet.getBlockIndexByLimitNext(startNum, endNum - startNum));
+      } else {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("endNum must be greater than startNum and span must be <= "
+                + BLOCK_ID_LIMIT_NUM)
+            .asRuntimeException());
+        return;
+      }
+      responseObserver.onCompleted();
+    }
+
+    @Override
+    public void getBlockIndexSegmentByLimitNext(BlockLimit request,
+        StreamObserver<BlockIndexRange> responseObserver) {
+      long startNum = request.getStartNum();
+      long endNum = request.getEndNum();
+
+      if (endNum > 0 && endNum > startNum && endNum - startNum <= BLOCK_ID_LIMIT_NUM) {
+        responseObserver.onNext(wallet.getBlockIndexSegmentsByLimitNext(
+            startNum, endNum - startNum));
       } else {
         responseObserver.onError(Status.INVALID_ARGUMENT
             .withDescription("endNum must be greater than startNum and span must be <= "

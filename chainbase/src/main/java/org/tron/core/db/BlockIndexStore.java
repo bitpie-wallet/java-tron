@@ -54,6 +54,10 @@ public class BlockIndexStore extends TronStoreWithRevoking<BytesCapsule> {
     return pack(revokingDB.getValuesNext(ByteArray.fromLong(startNumber), limit));
   }
 
+  public List<byte[]> getLimitNumberBytes(long startNumber, long limit) {
+    return revokingDB.getValuesNextInOrder(ByteArray.fromLong(startNumber), limit);
+  }
+
   private List<BlockId> pack(Set<byte[]> values) {
     List<BlockId> blocks = new ArrayList<>();
     for (byte[] bytes : values) {
@@ -62,4 +66,5 @@ public class BlockIndexStore extends TronStoreWithRevoking<BytesCapsule> {
     blocks.sort(Comparator.comparing(BlockId::getNum));
     return blocks;
   }
+
 }

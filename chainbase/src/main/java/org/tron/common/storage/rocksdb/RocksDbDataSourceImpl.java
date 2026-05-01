@@ -377,6 +377,42 @@ public class RocksDbDataSourceImpl extends DbStat implements DbSourceInter<byte[
     }
   }
 
+  public List<Map.Entry<byte[], byte[]>> getNextInOrder(byte[] key, long limit) {
+    if (limit <= 0) {
+      return Collections.emptyList();
+    }
+    resetDbLock.readLock().lock();
+    try (final ReadOptions readOptions = getReadOptions();
+         final RocksIterator iter = getRocksIterator(readOptions)) {
+      List<Map.Entry<byte[], byte[]>> result = new ArrayList<>();
+      long i = 0;
+      for (iter.seek(key); iter.isValid() && i < limit; iter.next(), i++) {
+        result.add(new java.util.AbstractMap.SimpleImmutableEntry<>(iter.key(), iter.value()));
+      }
+      return result;
+    } finally {
+      resetDbLock.readLock().unlock();
+    }
+  }
+
+  public List<byte[]> getValuesNextInOrder(byte[] key, long limit) {
+    if (limit <= 0) {
+      return Collections.emptyList();
+    }
+    resetDbLock.readLock().lock();
+    try (final ReadOptions readOptions = getReadOptions();
+         final RocksIterator iter = getRocksIterator(readOptions)) {
+      List<byte[]> result = new ArrayList<>();
+      long i = 0;
+      for (iter.seek(key); iter.isValid() && i < limit; iter.next(), i++) {
+        result.add(iter.value());
+      }
+      return result;
+    } finally {
+      resetDbLock.readLock().unlock();
+    }
+  }
+
   @Override
   public Map<WrappedByteArray, byte[]> prefixQuery(byte[] key) {
     resetDbLock.readLock().lock();

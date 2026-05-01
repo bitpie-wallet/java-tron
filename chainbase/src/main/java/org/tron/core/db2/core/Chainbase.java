@@ -168,6 +168,62 @@ public class Chainbase implements IRevokingDB {
     return getValuesNext(head(), key, limit);
   }
 
+  @Override
+  public List<byte[]> getValuesNextInOrder(byte[] key, long limit) {
+    return getValuesNextInOrder(head(), key, limit);
+  }
+
+  private List<byte[]> getValuesNextInOrder(Snapshot head, byte[] key, long limit) {
+    if (limit <= 0) {
+      return Collections.emptyList();
+    }
+
+    Map<WrappedByteArray, WrappedByteArray> collection = new HashMap<>();
+    if (head.getPrevious() != null) {
+      ((SnapshotImpl) head).collect(collection);
+    }
+
+    if (collection.isEmpty()) {
+      return getRootValuesNextInOrder(head, key, limit);
+    }
+
+    long rootLimit = limit + collection.size();
+    Map<WrappedByteArray, WrappedByteArray> merged = new HashMap<>();
+    for (Map.Entry<byte[], byte[]> entry : getRootNextInOrder(head, key, rootLimit)) {
+      merged.put(WrappedByteArray.of(entry.getKey()), WrappedByteArray.of(entry.getValue()));
+    }
+    merged.putAll(collection);
+
+    return merged.entrySet().stream()
+        .sorted((e1, e2) -> ByteUtil.compare(e1.getKey().getBytes(), e2.getKey().getBytes()))
+        .filter(e -> ByteUtil.greaterOrEquals(e.getKey().getBytes(), key))
+        .limit(limit)
+        .map(Map.Entry::getValue)
+        .map(WrappedByteArray::getBytes)
+        .collect(Collectors.toList());
+  }
+
+  private List<byte[]> getRootValuesNextInOrder(Snapshot head, byte[] key, long limit) {
+    if (((SnapshotRoot) head.getRoot()).db.getClass() == LevelDB.class) {
+      return ((LevelDB) ((SnapshotRoot) head.getRoot()).db).getDb()
+          .getValuesNextInOrder(key, limit);
+    } else if (((SnapshotRoot) head.getRoot()).db.getClass() == RocksDB.class) {
+      return ((RocksDB) ((SnapshotRoot) head.getRoot()).db).getDb()
+          .getValuesNextInOrder(key, limit);
+    }
+    return Collections.emptyList();
+  }
+
+  private List<Map.Entry<byte[], byte[]>> getRootNextInOrder(
+      Snapshot head, byte[] key, long limit) {
+    if (((SnapshotRoot) head.getRoot()).db.getClass() == LevelDB.class) {
+      return ((LevelDB) ((SnapshotRoot) head.getRoot()).db).getDb().getNextInOrder(key, limit);
+    } else if (((SnapshotRoot) head.getRoot()).db.getClass() == RocksDB.class) {
+      return ((RocksDB) ((SnapshotRoot) head.getRoot()).db).getDb().getNextInOrder(key, limit);
+    }
+    return Collections.emptyList();
+  }
+
   // for blockstore
   private Set<byte[]> getValuesNext(Snapshot head, byte[] key, long limit) {
     if (limit <= 0) {

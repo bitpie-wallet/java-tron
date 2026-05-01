@@ -37,6 +37,8 @@ public interface IRevokingDB extends Iterable<Map.Entry<byte[], byte[]>> {
   // for blockstore
   Set<byte[]> getValuesNext(byte[] key, long limit);
 
+  List<byte[]> getValuesNextInOrder(byte[] key, long limit);
+
   List<byte[]> getKeysNext(byte[] key, long limit);
 
   Map<WrappedByteArray, byte[]> prefixQuery(byte[] key);

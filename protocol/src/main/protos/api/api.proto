@@ -252,6 +252,10 @@ service Wallet {
   }
   rpc GetBlockIdByLimitNext (BlockLimit) returns (BlockIdList) {
   }
+  rpc GetBlockIndexByLimitNext (BlockLimit) returns (BlockIndexRange) {
+  }
+  rpc GetBlockIndexSegmentByLimitNext (BlockLimit) returns (BlockIndexRange) {
+  }
   //Please use GetBlockByLatestNum2 instead of this function.
   rpc GetBlockByLatestNum (NumberMessage) returns (BlockList) {
   }
@@ -795,6 +799,20 @@ message BlockIdInfo {
 }
 message BlockIdList {
   repeated BlockIdInfo block_id = 1;
+}
+message BlockIndexRange {
+  int64 startNum = 1;
+  int64 endNum = 2;
+  bytes blockids = 3;
+  repeated int64 timestamps = 4;
+  bytes first_parent_hash = 5;
+  repeated BlockIndexTimestampSegment timestamp_segment = 6;
+}
+message BlockIndexTimestampSegment {
+  int64 startNum = 1;
+  int64 endNum = 2;
+  int64 startTimestamp = 3;
+  int64 missedSlots = 4;
 }
 message TransactionLimit {
   bytes transactionId = 1;

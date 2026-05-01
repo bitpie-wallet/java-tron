@@ -362,6 +362,46 @@ public class LevelDbDataSourceImpl extends DbStat implements DbSourceInter<byte[
     }
   }
 
+  public List<Entry<byte[], byte[]>> getNextInOrder(byte[] key, long limit) {
+    if (limit <= 0) {
+      return Collections.emptyList();
+    }
+    resetDbLock.readLock().lock();
+    try (DBIterator iterator = getDBIterator()) {
+      List<Entry<byte[], byte[]>> result = new ArrayList<>();
+      long i = 0;
+      for (iterator.seek(key); iterator.hasNext() && i++ < limit; iterator.next()) {
+        Entry<byte[], byte[]> entry = iterator.peekNext();
+        result.add(new java.util.AbstractMap.SimpleImmutableEntry<>(
+            entry.getKey(), entry.getValue()));
+      }
+      return result;
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    } finally {
+      resetDbLock.readLock().unlock();
+    }
+  }
+
+  public List<byte[]> getValuesNextInOrder(byte[] key, long limit) {
+    if (limit <= 0) {
+      return Collections.emptyList();
+    }
+    resetDbLock.readLock().lock();
+    try (DBIterator iterator = getDBIterator()) {
+      List<byte[]> result = new ArrayList<>();
+      long i = 0;
+      for (iterator.seek(key); iterator.hasNext() && i++ < limit; iterator.next()) {
+        result.add(iterator.peekNext().getValue());
+      }
+      return result;
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    } finally {
+      resetDbLock.readLock().unlock();
+    }
+  }
+
   @Override
   public Map<WrappedByteArray, byte[]> prefixQuery(byte[] key) {
     resetDbLock.readLock().lock();
