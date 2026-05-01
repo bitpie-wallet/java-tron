@@ -1098,10 +1098,22 @@ public class RpcApiServicesTest {
     assertNotNull(blockingStubFull.getBlockHeaderByLimitNext(message));
   }
 
+  @Test
+  public void testGetBlockIdByLimitNext() {
+    BlockLimit message = BlockLimit.newBuilder().setStartNum(0).setEndNum(1).build();
+    assertNotNull(blockingStubFull.getBlockIdByLimitNext(message));
+  }
+
   @Test(expected = StatusRuntimeException.class)
   public void testGetBlockHeaderByLimitNextRejectsInvalidRange() {
     BlockLimit message = BlockLimit.newBuilder().setStartNum(0).setEndNum(100001).build();
     blockingStubFull.getBlockHeaderByLimitNext(message);
+  }
+
+  @Test(expected = StatusRuntimeException.class)
+  public void testGetBlockIdByLimitNextRejectsInvalidRange() {
+    BlockLimit message = BlockLimit.newBuilder().setStartNum(0).setEndNum(1000001).build();
+    blockingStubFull.getBlockIdByLimitNext(message);
   }
 
   @Test

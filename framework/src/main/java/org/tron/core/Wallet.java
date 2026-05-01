@@ -78,6 +78,8 @@ import org.tron.api.GrpcAPI.Address;
 import org.tron.api.GrpcAPI.AssetIssueList;
 import org.tron.api.GrpcAPI.BlockHeaderInfo;
 import org.tron.api.GrpcAPI.BlockHeaderList;
+import org.tron.api.GrpcAPI.BlockIdInfo;
+import org.tron.api.GrpcAPI.BlockIdList;
 import org.tron.api.GrpcAPI.BlockList;
 import org.tron.api.GrpcAPI.BytesMessage;
 import org.tron.api.GrpcAPI.DecryptNotes;
@@ -1864,6 +1866,19 @@ public class Wallet {
     blockHeaders.sort(Comparator.comparingLong(BlockHeaderInfo::getNumber));
     blockHeaderListBuilder.addAllBlockHeader(blockHeaders);
     return blockHeaderListBuilder.build();
+  }
+
+  public BlockIdList getBlockIdsByLimitNext(long number, long limit) {
+    if (limit <= 0) {
+      return BlockIdList.getDefaultInstance();
+    }
+    BlockIdList.Builder blockIdListBuilder = BlockIdList.newBuilder();
+    chainBaseManager.getBlockIndexStore().getLimitNumber(number, limit).forEach(
+        blockId -> blockIdListBuilder.addBlockId(BlockIdInfo.newBuilder()
+            .setNumber(blockId.getNum())
+            .setBlockid(ByteString.copyFrom(blockId.getBytes()))
+            .build()));
+    return blockIdListBuilder.build();
   }
 
   private BlockHeaderInfo parseBlockHeaderInfo(byte[] blockBytes) {
