@@ -43,11 +43,16 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Range;
 import com.google.protobuf.ByteString;
+import com.google.protobuf.CodedInputStream;
+import com.google.protobuf.ExtensionRegistryLite;
 import com.google.protobuf.InvalidProtocolBufferException;
+import com.google.protobuf.WireFormat;
+import java.io.IOException;
 import java.math.BigInteger;
 import java.security.SignatureException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -224,6 +229,7 @@ import org.tron.protos.Protocol.Account;
 import org.tron.protos.Protocol.Account.FreezeV2;
 import org.tron.protos.Protocol.Account.UnFreezeV2;
 import org.tron.protos.Protocol.Block;
+import org.tron.protos.Protocol.BlockHeader;
 import org.tron.protos.Protocol.DelegatedResourceAccountIndex;
 import org.tron.protos.Protocol.Exchange;
 import org.tron.protos.Protocol.MarketOrder;
@@ -1852,13 +1858,49 @@ public class Wallet {
       return BlockHeaderList.getDefaultInstance();
     }
     BlockHeaderList.Builder blockHeaderListBuilder = BlockHeaderList.newBuilder();
-    chainBaseManager.getBlockStore().getLimitNumber(number, limit).forEach(blockCapsule ->
-        blockHeaderListBuilder.addBlockHeader(BlockHeaderInfo.newBuilder()
-            .setNumber(blockCapsule.getNum())
-            .setBlockid(ByteString.copyFrom(blockCapsule.getBlockId().getBytes()))
-            .setParentHash(blockCapsule.getParentHashStr())
-            .setTimestamp(blockCapsule.getTimeStamp())));
+    List<BlockHeaderInfo> blockHeaders = new ArrayList<>();
+    chainBaseManager.getBlockStore().getLimitNumberRaw(number, limit)
+        .forEach(blockBytes -> blockHeaders.add(parseBlockHeaderInfo(blockBytes)));
+    blockHeaders.sort(Comparator.comparingLong(BlockHeaderInfo::getNumber));
+    blockHeaderListBuilder.addAllBlockHeader(blockHeaders);
     return blockHeaderListBuilder.build();
+  }
+
+  private BlockHeaderInfo parseBlockHeaderInfo(byte[] blockBytes) {
+    CodedInputStream input = CodedInputStream.newInstance(blockBytes);
+    try {
+      while (!input.isAtEnd()) {
+        int tag = input.readTag();
+        if (tag == 0) {
+          break;
+        }
+        if (WireFormat.getTagFieldNumber(tag) == Block.BLOCK_HEADER_FIELD_NUMBER) {
+          if (WireFormat.getTagWireType(tag) != WireFormat.WIRETYPE_LENGTH_DELIMITED) {
+            throw new InvalidProtocolBufferException("Unexpected block_header wire type");
+          }
+          BlockHeader.Builder blockHeaderBuilder = BlockHeader.newBuilder();
+          input.readMessage(blockHeaderBuilder, ExtensionRegistryLite.getEmptyRegistry());
+          BlockHeader.raw rawData = blockHeaderBuilder.getRawData();
+          long blockNumber = rawData.getNumber();
+          BlockId blockId = new BlockId(
+              Sha256Hash.of(CommonParameter.getInstance().isECKeyCryptoEngine(),
+                  rawData.toByteArray()),
+              blockNumber);
+          return BlockHeaderInfo.newBuilder()
+              .setNumber(blockNumber)
+              .setBlockid(ByteString.copyFrom(blockId.getBytes()))
+              .setParentHash(rawData.getParentHash())
+              .setTimestamp(rawData.getTimestamp())
+              .build();
+        }
+        if (!input.skipField(tag)) {
+          break;
+        }
+      }
+    } catch (IOException e) {
+      throw new IllegalStateException("Block proto data parse exception", e);
+    }
+    throw new IllegalStateException("Block proto data missing block header");
   }
 
   public BlockList getBlockByLatestNum(long getNum) {
