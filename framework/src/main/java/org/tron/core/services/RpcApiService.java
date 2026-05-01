@@ -20,6 +20,7 @@ import org.tron.api.GrpcAPI.AccountNetMessage;
 import org.tron.api.GrpcAPI.AccountResourceMessage;
 import org.tron.api.GrpcAPI.AssetIssueList;
 import org.tron.api.GrpcAPI.BlockExtention;
+import org.tron.api.GrpcAPI.BlockHeaderList;
 import org.tron.api.GrpcAPI.BlockLimit;
 import org.tron.api.GrpcAPI.BlockList;
 import org.tron.api.GrpcAPI.BlockListExtention;
@@ -166,6 +167,7 @@ public class RpcApiService extends RpcService {
   private static final String EXCEPTION_CAUGHT = "exception caught";
   private static final String UNKNOWN_EXCEPTION_CAUGHT = "unknown exception caught: ";
   private static final long BLOCK_LIMIT_NUM = 100;
+  private static final long BLOCK_HEADER_LIMIT_NUM = 100_000;
   private static final long TRANSACTION_LIMIT_NUM = 1000;
   @Autowired
   private Manager dbManager;
@@ -1691,6 +1693,24 @@ public class RpcApiService extends RpcService {
             .onNext(blockList2Extention(wallet.getBlocksByLimitNext(startNum, endNum - startNum)));
       } else {
         responseObserver.onNext(null);
+      }
+      responseObserver.onCompleted();
+    }
+
+    @Override
+    public void getBlockHeaderByLimitNext(BlockLimit request,
+        StreamObserver<BlockHeaderList> responseObserver) {
+      long startNum = request.getStartNum();
+      long endNum = request.getEndNum();
+
+      if (endNum > 0 && endNum > startNum && endNum - startNum <= BLOCK_HEADER_LIMIT_NUM) {
+        responseObserver.onNext(wallet.getBlockHeadersByLimitNext(startNum, endNum - startNum));
+      } else {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("endNum must be greater than startNum and span must be <= "
+                + BLOCK_HEADER_LIMIT_NUM)
+            .asRuntimeException());
+        return;
       }
       responseObserver.onCompleted();
     }

@@ -71,6 +71,8 @@ import org.tron.api.GrpcAPI.AccountNetMessage;
 import org.tron.api.GrpcAPI.AccountResourceMessage;
 import org.tron.api.GrpcAPI.Address;
 import org.tron.api.GrpcAPI.AssetIssueList;
+import org.tron.api.GrpcAPI.BlockHeaderInfo;
+import org.tron.api.GrpcAPI.BlockHeaderList;
 import org.tron.api.GrpcAPI.BlockList;
 import org.tron.api.GrpcAPI.BytesMessage;
 import org.tron.api.GrpcAPI.DecryptNotes;
@@ -1843,6 +1845,20 @@ public class Wallet {
     chainBaseManager.getBlockStore().getLimitNumber(number, limit).forEach(
         blockCapsule -> blockListBuilder.addBlock(blockCapsule.getInstance()));
     return blockListBuilder.build();
+  }
+
+  public BlockHeaderList getBlockHeadersByLimitNext(long number, long limit) {
+    if (limit <= 0) {
+      return BlockHeaderList.getDefaultInstance();
+    }
+    BlockHeaderList.Builder blockHeaderListBuilder = BlockHeaderList.newBuilder();
+    chainBaseManager.getBlockStore().getLimitNumber(number, limit).forEach(blockCapsule ->
+        blockHeaderListBuilder.addBlockHeader(BlockHeaderInfo.newBuilder()
+            .setNumber(blockCapsule.getNum())
+            .setBlockid(ByteString.copyFrom(blockCapsule.getBlockId().getBytes()))
+            .setParentHash(blockCapsule.getParentHashStr())
+            .setTimestamp(blockCapsule.getTimeStamp())));
+    return blockHeaderListBuilder.build();
   }
 
   public BlockList getBlockByLatestNum(long getNum) {
