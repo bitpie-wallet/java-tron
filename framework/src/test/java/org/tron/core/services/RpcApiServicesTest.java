@@ -1104,6 +1104,18 @@ public class RpcApiServicesTest {
     assertNotNull(blockingStubFull.getBlockIdByLimitNext(message));
   }
 
+  @Test
+  public void testGetBlockIndexByLimitNext() {
+    BlockLimit message = BlockLimit.newBuilder().setStartNum(0).setEndNum(1).build();
+    assertNotNull(blockingStubFull.getBlockIndexByLimitNext(message));
+  }
+
+  @Test
+  public void testGetBlockIndexSegmentByLimitNext() {
+    BlockLimit message = BlockLimit.newBuilder().setStartNum(0).setEndNum(1).build();
+    assertNotNull(blockingStubFull.getBlockIndexSegmentByLimitNext(message));
+  }
+
   @Test(expected = StatusRuntimeException.class)
   public void testGetBlockHeaderByLimitNextRejectsInvalidRange() {
     BlockLimit message = BlockLimit.newBuilder().setStartNum(0).setEndNum(100001).build();
@@ -1114,6 +1126,18 @@ public class RpcApiServicesTest {
   public void testGetBlockIdByLimitNextRejectsInvalidRange() {
     BlockLimit message = BlockLimit.newBuilder().setStartNum(0).setEndNum(1000001).build();
     blockingStubFull.getBlockIdByLimitNext(message);
+  }
+
+  @Test(expected = StatusRuntimeException.class)
+  public void testGetBlockIndexByLimitNextRejectsInvalidRange() {
+    BlockLimit message = BlockLimit.newBuilder().setStartNum(0).setEndNum(1000001).build();
+    blockingStubFull.getBlockIndexByLimitNext(message);
+  }
+
+  @Test(expected = StatusRuntimeException.class)
+  public void testGetBlockIndexSegmentByLimitNextRejectsInvalidRange() {
+    BlockLimit message = BlockLimit.newBuilder().setStartNum(0).setEndNum(1000001).build();
+    blockingStubFull.getBlockIndexSegmentByLimitNext(message);
   }
 
   @Test

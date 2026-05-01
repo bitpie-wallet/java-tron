@@ -34,6 +34,8 @@ public class LiteFnQueryGrpcInterceptor implements ServerInterceptor {
     filterMethods.add("protocol.Wallet/GetBlockByLimitNext2");
     filterMethods.add("protocol.Wallet/GetBlockHeaderByLimitNext");
     filterMethods.add("protocol.Wallet/GetBlockIdByLimitNext");
+    filterMethods.add("protocol.Wallet/GetBlockIndexByLimitNext");
+    filterMethods.add("protocol.Wallet/GetBlockIndexSegmentByLimitNext");
     filterMethods.add("protocol.Wallet/GetBlockByNum");
     filterMethods.add("protocol.Wallet/GetBlockByNum2");
     filterMethods.add("protocol.Wallet/GetMerkleTreeVoucherInfo");

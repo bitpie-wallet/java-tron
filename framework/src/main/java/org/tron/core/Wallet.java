@@ -80,6 +80,8 @@ import org.tron.api.GrpcAPI.BlockHeaderInfo;
 import org.tron.api.GrpcAPI.BlockHeaderList;
 import org.tron.api.GrpcAPI.BlockIdInfo;
 import org.tron.api.GrpcAPI.BlockIdList;
+import org.tron.api.GrpcAPI.BlockIndexRange;
+import org.tron.api.GrpcAPI.BlockIndexTimestampSegment;
 import org.tron.api.GrpcAPI.BlockList;
 import org.tron.api.GrpcAPI.BytesMessage;
 import org.tron.api.GrpcAPI.DecryptNotes;
@@ -286,6 +288,10 @@ public class Wallet {
   private static final byte[] SHIELDED_TRC20_LOG_TOPICS_NOTE_SPENT = Hash.sha3(ByteArray
       .fromString("NoteSpent(bytes32)"));
   private static final String BROADCAST_TRANS_FAILED = "Broadcast transaction {} failed, {}.";
+  private static final int BLOCK_ID_BYTES = 32;
+  private static final int BLOCK_INDEX_TIMESTAMP_CHECKPOINT_STRIDE = 100_000;
+  private static final long BLOCK_INDEX_TIMESTAMP_SCAN_WINDOW_LIMIT = 1_024L;
+  private static final long TRON_MAINNET_BLOCK1_TIMESTAMP_MS = 1_529_891_469_000L;
 
   @Getter
   private final SignInterface cryptoEngine;
@@ -1879,6 +1885,473 @@ public class Wallet {
             .setBlockid(ByteString.copyFrom(blockId.getBytes()))
             .build()));
     return blockIdListBuilder.build();
+  }
+
+  public BlockIndexRange getBlockIndexByLimitNext(long number, long limit) {
+    return getBlockIndexRangeByLimitNext(number, limit, true);
+  }
+
+  public BlockIndexRange getBlockIndexSegmentsByLimitNext(long number, long limit) {
+    return getBlockIndexRangeByLimitNext(number, limit, false);
+  }
+
+  private BlockIndexRange getBlockIndexRangeByLimitNext(
+      long number, long limit, boolean includePerBlockTimestamps) {
+    if (limit <= 0) {
+      return BlockIndexRange.getDefaultInstance();
+    }
+
+    List<byte[]> blockIds = chainBaseManager.getBlockIndexStore()
+        .getLimitNumberBytes(number, limit);
+    validateBlockIndexIds(blockIds, number);
+
+    long stopBlock = number + blockIds.size();
+    BlockIndexRange.Builder rangeBuilder = BlockIndexRange.newBuilder()
+        .setStartNum(number)
+        .setEndNum(stopBlock);
+
+    ByteString.Output blockIdsOutput = ByteString.newOutput(blockIds.size() * BLOCK_ID_BYTES);
+    try {
+      for (byte[] blockId : blockIds) {
+        blockIdsOutput.write(blockId);
+      }
+    } catch (IOException e) {
+      throw new IllegalStateException("Block index bytes serialization failed", e);
+    }
+    rangeBuilder.setBlockids(blockIdsOutput.toByteString());
+
+    if (blockIds.isEmpty()) {
+      return rangeBuilder.build();
+    }
+
+    TimestampCheckpoint firstCheckpoint = fetchBlockIndexTimestampCheckpoint(
+        number, number, blockIds);
+    rangeBuilder.setFirstParentHash(ByteString.copyFrom(firstCheckpoint.parentHash));
+
+    List<TimestampSegment> segments = buildBlockIndexTimestampSegments(number, stopBlock, blockIds);
+    for (TimestampSegment segment : segments) {
+      rangeBuilder.addTimestampSegment(BlockIndexTimestampSegment.newBuilder()
+          .setStartNum(segment.startBlock)
+          .setEndNum(segment.stopBlock)
+          .setStartTimestamp(segment.startTsMs)
+          .setMissedSlots(segment.missedSlots)
+          .build());
+    }
+    if (!includePerBlockTimestamps) {
+      return rangeBuilder.build();
+    }
+
+    int segmentIndex = 0;
+    for (long blockNumber = number; blockNumber < stopBlock; blockNumber++) {
+      while (segmentIndex < segments.size()
+          && blockNumber >= segments.get(segmentIndex).stopBlock) {
+        segmentIndex++;
+      }
+      if (segmentIndex >= segments.size()) {
+        throw new IllegalStateException("Timestamp segment coverage ended before block "
+            + blockNumber);
+      }
+      rangeBuilder.addTimestamps(segments.get(segmentIndex).timestampFor(blockNumber));
+    }
+
+    return rangeBuilder.build();
+  }
+
+  private void validateBlockIndexIds(List<byte[]> blockIds, long startNumber) {
+    for (int index = 0; index < blockIds.size(); index++) {
+      byte[] blockId = blockIds.get(index);
+      long expectedNumber = startNumber + index;
+      if (blockId.length != BLOCK_ID_BYTES) {
+        throw new IllegalStateException("Block index returned invalid block id length "
+            + blockId.length + " for block " + expectedNumber);
+      }
+      long actualNumber = blockNumberFromBlockId(blockId);
+      if (actualNumber != expectedNumber) {
+        throw new IllegalStateException("Block index returned block " + actualNumber
+            + " at offset " + index + "; expected " + expectedNumber);
+      }
+    }
+  }
+
+  private TimestampCheckpoint fetchBlockIndexTimestampCheckpoint(
+      long blockNumber, long rangeStart, List<byte[]> blockIds) {
+    try {
+      BlockCapsule block = chainBaseManager.getBlockByNum(blockNumber);
+      BlockHeader.raw rawData = block.getInstance().getBlockHeader().getRawData();
+      if (rawData.getNumber() != blockNumber) {
+        throw new IllegalStateException("Block store returned header " + rawData.getNumber()
+            + " for requested block " + blockNumber);
+      }
+      byte[] blockHash = block.getBlockId().getBytes();
+      int offset = (int) (blockNumber - rangeStart);
+      if (offset >= 0 && offset < blockIds.size()) {
+        byte[] expectedHash = blockIds.get(offset);
+        if (!Arrays.equals(blockHash, expectedHash)) {
+          throw new IllegalStateException("Block index/header hash mismatch for block "
+              + blockNumber + ": index=" + ByteArray.toHexString(expectedHash)
+              + " header=" + ByteArray.toHexString(blockHash));
+        }
+        if (offset > 0 && !Arrays.equals(rawData.getParentHash().toByteArray(),
+            blockIds.get(offset - 1))) {
+          throw new IllegalStateException("Block index/header parent mismatch for block "
+              + blockNumber + ": index previous="
+              + ByteArray.toHexString(blockIds.get(offset - 1)) + " header parent="
+              + ByteArray.toHexString(rawData.getParentHash().toByteArray()));
+        }
+      }
+      return new TimestampCheckpoint(
+          blockNumber,
+          blockHash,
+          rawData.getParentHash().toByteArray(),
+          rawData.getTimestamp());
+    } catch (ItemNotFoundException | BadItemException e) {
+      throw new IllegalStateException("Unable to load block header checkpoint " + blockNumber, e);
+    }
+  }
+
+  private List<TimestampSegment> buildBlockIndexTimestampSegments(
+      long startBlock, long stopBlock, List<byte[]> blockIds) {
+    if (startBlock == stopBlock) {
+      return new ArrayList<>();
+    }
+
+    Map<Long, TimestampCheckpoint> checkpointCache = new HashMap<>();
+    List<TimestampSegment> segments = new ArrayList<>();
+    long currentBlock = startBlock;
+    if (currentBlock == 0) {
+      segments.add(new TimestampSegment(0, 1, 0, 0));
+      currentBlock = 1;
+    }
+
+    while (currentBlock < stopBlock) {
+      long windowStop = Math.min(
+          currentBlock + BLOCK_INDEX_TIMESTAMP_CHECKPOINT_STRIDE, stopBlock);
+      segments.addAll(discoverBlockIndexTimestampWindow(
+          currentBlock,
+          windowStop,
+          startBlock,
+          blockIds,
+          checkpointCache));
+      currentBlock = windowStop;
+    }
+
+    List<TimestampSegment> mergedSegments = mergeAdjacentTimestampSegments(segments);
+    validateTimestampSegmentCoverage(mergedSegments, startBlock, stopBlock);
+    return mergedSegments;
+  }
+
+  private TimestampCheckpoint fetchBlockIndexTimestampCheckpointCached(
+      long blockNumber,
+      long rangeStart,
+      List<byte[]> blockIds,
+      Map<Long, TimestampCheckpoint> checkpointCache) {
+    TimestampCheckpoint checkpoint = checkpointCache.get(blockNumber);
+    if (checkpoint == null) {
+      checkpoint = fetchBlockIndexTimestampCheckpoint(blockNumber, rangeStart, blockIds);
+      validateTimestampCheckpoint(checkpoint);
+      checkpointCache.put(blockNumber, checkpoint);
+    }
+    return checkpoint;
+  }
+
+  private List<TimestampSegment> discoverBlockIndexTimestampWindow(
+      long startBlock,
+      long stopBlock,
+      long rangeStart,
+      List<byte[]> blockIds,
+      Map<Long, TimestampCheckpoint> checkpointCache) {
+    if (startBlock >= stopBlock) {
+      return new ArrayList<>();
+    }
+    if (startBlock == 0) {
+      throw new IllegalStateException("Genesis block must be handled before timestamp discovery");
+    }
+
+    TimestampCheckpoint tailCheckpoint = fetchBlockIndexTimestampCheckpointCached(
+        stopBlock - 1, rangeStart, blockIds, checkpointCache);
+    long tailMissedSlots = missedSlotCount(tailCheckpoint);
+    List<TimestampSegment> segments = new ArrayList<>();
+    long currentBlock = startBlock;
+    TimestampCheckpoint currentCheckpoint = fetchBlockIndexTimestampCheckpointCached(
+        currentBlock, rangeStart, blockIds, checkpointCache);
+
+    while (currentBlock < stopBlock) {
+      long currentMissedSlots = missedSlotCount(currentCheckpoint);
+      if (tailMissedSlots < currentMissedSlots) {
+        throw new IllegalStateException("TRON timestamp missed-slot counter decreased between "
+            + "block " + currentBlock + " (" + currentMissedSlots + ") and block "
+            + (stopBlock - 1) + " (" + tailMissedSlots + ")");
+      }
+      if (tailMissedSlots == currentMissedSlots) {
+        segments.add(new TimestampSegment(
+            currentBlock,
+            stopBlock,
+            currentCheckpoint.timestampMs,
+            currentMissedSlots));
+        break;
+      }
+
+      if (shouldScanTimestampWindow(
+          stopBlock - currentBlock,
+          tailMissedSlots - currentMissedSlots)) {
+        segments.addAll(scanBlockIndexTimestampWindow(
+            currentBlock,
+            stopBlock,
+            rangeStart,
+            blockIds,
+            checkpointCache));
+        break;
+      }
+
+      long firstChangedBlock = findFirstMissedSlotIncrease(
+          currentBlock + 1,
+          stopBlock - 1,
+          currentMissedSlots,
+          rangeStart,
+          blockIds,
+          checkpointCache);
+      if (firstChangedBlock > currentBlock) {
+        segments.add(new TimestampSegment(
+            currentBlock,
+            firstChangedBlock,
+            currentCheckpoint.timestampMs,
+            currentMissedSlots));
+      }
+      currentBlock = firstChangedBlock;
+      currentCheckpoint = fetchBlockIndexTimestampCheckpointCached(
+          currentBlock, rangeStart, blockIds, checkpointCache);
+    }
+    return segments;
+  }
+
+  private List<TimestampSegment> scanBlockIndexTimestampWindow(
+      long startBlock,
+      long stopBlock,
+      long rangeStart,
+      List<byte[]> blockIds,
+      Map<Long, TimestampCheckpoint> checkpointCache) {
+    TimestampCheckpoint currentCheckpoint = fetchBlockIndexTimestampCheckpointCached(
+        startBlock, rangeStart, blockIds, checkpointCache);
+    long currentMissedSlots = missedSlotCount(currentCheckpoint);
+    long segmentStart = startBlock;
+    long segmentStartTsMs = currentCheckpoint.timestampMs;
+    List<TimestampSegment> segments = new ArrayList<>();
+
+    for (long blockNumber = startBlock + 1; blockNumber < stopBlock; blockNumber++) {
+      TimestampCheckpoint checkpoint = fetchBlockIndexTimestampCheckpointCached(
+          blockNumber, rangeStart, blockIds, checkpointCache);
+      long missedSlots = missedSlotCount(checkpoint);
+      if (missedSlots < currentMissedSlots) {
+        throw new IllegalStateException("TRON timestamp missed-slot counter decreased at block "
+            + blockNumber + ": " + missedSlots + " < " + currentMissedSlots);
+      }
+      if (missedSlots == currentMissedSlots) {
+        continue;
+      }
+      segments.add(new TimestampSegment(
+          segmentStart,
+          blockNumber,
+          segmentStartTsMs,
+          currentMissedSlots));
+      segmentStart = blockNumber;
+      segmentStartTsMs = checkpoint.timestampMs;
+      currentMissedSlots = missedSlots;
+    }
+
+    segments.add(new TimestampSegment(
+        segmentStart,
+        stopBlock,
+        segmentStartTsMs,
+        currentMissedSlots));
+    return segments;
+  }
+
+  private long findFirstMissedSlotIncrease(
+      long lowBlock,
+      long highBlock,
+      long currentMissedSlots,
+      long rangeStart,
+      List<byte[]> blockIds,
+      Map<Long, TimestampCheckpoint> checkpointCache) {
+    if (lowBlock > highBlock) {
+      throw new IllegalStateException("Cannot locate timestamp change in an empty range");
+    }
+
+    long low = lowBlock;
+    long high = highBlock;
+    while (low < high) {
+      long mid = low + ((high - low) / 2);
+      TimestampCheckpoint checkpoint = fetchBlockIndexTimestampCheckpointCached(
+          mid, rangeStart, blockIds, checkpointCache);
+      long midMissedSlots = missedSlotCount(checkpoint);
+      if (midMissedSlots < currentMissedSlots) {
+        throw new IllegalStateException("TRON timestamp missed-slot counter decreased at block "
+            + mid + ": " + midMissedSlots + " < " + currentMissedSlots);
+      }
+      if (midMissedSlots > currentMissedSlots) {
+        high = mid;
+      } else {
+        low = mid + 1;
+      }
+    }
+
+    TimestampCheckpoint checkpoint = fetchBlockIndexTimestampCheckpointCached(
+        low, rangeStart, blockIds, checkpointCache);
+    long foundMissedSlots = missedSlotCount(checkpoint);
+    if (foundMissedSlots <= currentMissedSlots) {
+      throw new IllegalStateException("Failed to locate a missed-slot increase after block "
+          + (lowBlock - 1));
+    }
+    return low;
+  }
+
+  private List<TimestampSegment> mergeAdjacentTimestampSegments(
+      List<TimestampSegment> segments) {
+    if (segments.isEmpty()) {
+      return segments;
+    }
+    List<TimestampSegment> merged = new ArrayList<>();
+    merged.add(segments.get(0));
+    for (int i = 1; i < segments.size(); i++) {
+      TimestampSegment previous = merged.get(merged.size() - 1);
+      TimestampSegment segment = segments.get(i);
+      if (previous.stopBlock == segment.startBlock
+          && previous.missedSlots == segment.missedSlots
+          && previous.timestampFor(segment.startBlock - 1) + BLOCK_PRODUCED_INTERVAL
+          == segment.startTsMs) {
+        merged.set(merged.size() - 1, new TimestampSegment(
+            previous.startBlock,
+            segment.stopBlock,
+            previous.startTsMs,
+            previous.missedSlots));
+        continue;
+      }
+      merged.add(segment);
+    }
+    return merged;
+  }
+
+  private void validateTimestampSegmentCoverage(
+      List<TimestampSegment> segments, long startBlock, long stopBlock) {
+    long expectedStart = startBlock;
+    long lastMissedSlots = 0;
+    for (int i = 0; i < segments.size(); i++) {
+      TimestampSegment segment = segments.get(i);
+      if (segment.startBlock != expectedStart) {
+        throw new IllegalStateException("Timestamp segment coverage gap before block "
+            + expectedStart + "; next segment starts at " + segment.startBlock);
+      }
+      if (segment.stopBlock <= segment.startBlock) {
+        throw new IllegalStateException("Invalid timestamp segment [" + segment.startBlock
+            + ", " + segment.stopBlock + ")");
+      }
+      if (i > 0 && segment.missedSlots < lastMissedSlots) {
+        throw new IllegalStateException("Timestamp segment missed-slot counter decreased at block "
+            + segment.startBlock);
+      }
+      expectedStart = segment.stopBlock;
+      lastMissedSlots = segment.missedSlots;
+    }
+    if (expectedStart != stopBlock) {
+      throw new IllegalStateException("Timestamp segment coverage ended at " + expectedStart
+          + "; expected " + stopBlock);
+    }
+  }
+
+  private void validateTimestampCheckpoint(TimestampCheckpoint checkpoint) {
+    if (checkpoint.blockHash.length != BLOCK_ID_BYTES) {
+      throw new IllegalStateException("Invalid checkpoint block hash length "
+          + checkpoint.blockHash.length + " for block " + checkpoint.blockNumber);
+    }
+    missedSlotCount(checkpoint);
+  }
+
+  private long missedSlotCount(TimestampCheckpoint checkpoint) {
+    if (checkpoint.blockNumber == 0) {
+      if (checkpoint.timestampMs != 0) {
+        throw new IllegalStateException("Genesis block timestamp is nonzero: "
+            + checkpoint.timestampMs);
+      }
+      return 0;
+    }
+    long deltaMs = checkpoint.timestampMs - TRON_MAINNET_BLOCK1_TIMESTAMP_MS;
+    if (deltaMs % BLOCK_PRODUCED_INTERVAL != 0) {
+      throw new IllegalStateException("Block " + checkpoint.blockNumber + " timestamp "
+          + checkpoint.timestampMs + " is not aligned to mainnet block 1 timestamp "
+          + TRON_MAINNET_BLOCK1_TIMESTAMP_MS + " plus " + BLOCK_PRODUCED_INTERVAL
+          + "ms intervals");
+    }
+    long producedSlots = deltaMs / BLOCK_PRODUCED_INTERVAL;
+    long expectedSlots = checkpoint.blockNumber - 1;
+    long missedSlots = producedSlots - expectedSlots;
+    if (missedSlots < 0) {
+      throw new IllegalStateException("Block " + checkpoint.blockNumber + " timestamp "
+          + checkpoint.timestampMs + " is earlier than the mainnet 3-second schedule");
+    }
+    return missedSlots;
+  }
+
+  private boolean shouldScanTimestampWindow(long span, long missedSlotDelta) {
+    if (span <= 1 || missedSlotDelta <= 0) {
+      return false;
+    }
+    if (span > BLOCK_INDEX_TIMESTAMP_SCAN_WINDOW_LIMIT) {
+      return false;
+    }
+    long binaryProbeCost = missedSlotDelta * Math.max(1, bitLength(span - 1));
+    return binaryProbeCost >= span;
+  }
+
+  private static int bitLength(long value) {
+    if (value <= 0) {
+      return 0;
+    }
+    return Long.SIZE - Long.numberOfLeadingZeros(value);
+  }
+
+  private static long blockNumberFromBlockId(byte[] blockId) {
+    long value = 0L;
+    for (int i = 0; i < Long.BYTES; i++) {
+      value = (value << 8) | (blockId[i] & 0xffL);
+    }
+    return value;
+  }
+
+  private static class TimestampCheckpoint {
+    private final long blockNumber;
+    private final byte[] blockHash;
+    private final byte[] parentHash;
+    private final long timestampMs;
+
+    private TimestampCheckpoint(long blockNumber, byte[] blockHash, byte[] parentHash,
+        long timestampMs) {
+      this.blockNumber = blockNumber;
+      this.blockHash = blockHash;
+      this.parentHash = parentHash;
+      this.timestampMs = timestampMs;
+    }
+  }
+
+  private static class TimestampSegment {
+    private final long startBlock;
+    private final long stopBlock;
+    private final long startTsMs;
+    private final long missedSlots;
+
+    private TimestampSegment(long startBlock, long stopBlock, long startTsMs, long missedSlots) {
+      this.startBlock = startBlock;
+      this.stopBlock = stopBlock;
+      this.startTsMs = startTsMs;
+      this.missedSlots = missedSlots;
+    }
+
+    private long timestampFor(long blockNumber) {
+      if (blockNumber < startBlock || blockNumber >= stopBlock) {
+        throw new IllegalArgumentException("Block " + blockNumber
+            + " is outside timestamp segment [" + startBlock + ", " + stopBlock + ")");
+      }
+      return startTsMs + (blockNumber - startBlock) * BLOCK_PRODUCED_INTERVAL;
+    }
   }
 
   private BlockHeaderInfo parseBlockHeaderInfo(byte[] blockBytes) {
