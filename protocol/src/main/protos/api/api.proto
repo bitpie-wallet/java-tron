@@ -248,6 +248,8 @@ service Wallet {
   //Use this function instead of GetBlockByLimitNext.
   rpc GetBlockByLimitNext2 (BlockLimit) returns (BlockListExtention) {
   }
+  rpc GetBlockHeaderByLimitNext (BlockLimit) returns (BlockHeaderList) {
+  }
   //Please use GetBlockByLatestNum2 instead of this function.
   rpc GetBlockByLatestNum (NumberMessage) returns (BlockList) {
   }
@@ -775,6 +777,15 @@ message BlockReq {
 message BlockLimit {
   int64 startNum = 1;
   int64 endNum = 2;
+}
+message BlockHeaderInfo {
+  int64 number = 1;
+  bytes blockid = 2;
+  bytes parent_hash = 3;
+  int64 timestamp = 4;
+}
+message BlockHeaderList {
+  repeated BlockHeaderInfo block_header = 1;
 }
 message TransactionLimit {
   bytes transactionId = 1;

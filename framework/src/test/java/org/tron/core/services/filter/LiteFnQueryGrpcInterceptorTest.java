@@ -112,6 +112,18 @@ public class LiteFnQueryGrpcInterceptorTest {
   }
 
   @Test
+  public void testGrpcHeaderBatchThrowStatusRuntimeException() {
+    final GrpcAPI.BlockLimit message = GrpcAPI.BlockLimit.newBuilder()
+        .setStartNum(0)
+        .setEndNum(1)
+        .build();
+    chainBaseManager.setNodeType(ChainBaseManager.NodeType.LITE);
+    thrown.expect(StatusRuntimeException.class);
+    thrown.expectMessage(ERROR_MSG);
+    blockingStubFull.getBlockHeaderByLimitNext(message);
+  }
+
+  @Test
   public void testGrpcSolidityThrowStatusRuntimeException() {
     final GrpcAPI.NumberMessage message = GrpcAPI.NumberMessage.newBuilder().setNum(0).build();
     chainBaseManager.setNodeType(ChainBaseManager.NodeType.LITE);
