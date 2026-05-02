@@ -49,6 +49,8 @@ import org.tron.api.GrpcAPI.OvkDecryptTRC20Parameters;
 import org.tron.api.GrpcAPI.PaginatedMessage;
 import org.tron.api.GrpcAPI.PrivateParameters;
 import org.tron.api.GrpcAPI.PrivateParametersWithoutAsk;
+import org.tron.api.GrpcAPI.TransactionContextLookup;
+import org.tron.api.GrpcAPI.TransactionContextRequest;
 import org.tron.api.GrpcAPI.ViewingKeyMessage;
 import org.tron.api.WalletGrpc;
 import org.tron.api.WalletGrpc.WalletBlockingStub;
@@ -440,6 +442,29 @@ public class RpcApiServicesTest {
     assertNotNull(blockingStubFull.getTransactionInfoById(message));
     assertNotNull(blockingStubSolidity.getTransactionInfoById(message));
     assertNotNull(blockingStubPBFT.getTransactionInfoById(message));
+  }
+
+  @Test
+  public void testGetTransactionContextByIdList() {
+    TransactionContextRequest message = TransactionContextRequest.newBuilder()
+        .addTransaction(TransactionContextLookup.newBuilder()
+            .setTransactionId(ownerAddress)
+            .setBlockNumber(1)
+            .build())
+        .build();
+    assertNotNull(blockingStubFull.getTransactionContextByIdList(message));
+  }
+
+  @Test(expected = StatusRuntimeException.class)
+  public void testGetTransactionContextByIdListRejectsOversizeRequest() {
+    TransactionContextRequest.Builder message = TransactionContextRequest.newBuilder();
+    for (int index = 0; index < 1001; index++) {
+      message.addTransaction(TransactionContextLookup.newBuilder()
+          .setTransactionId(ownerAddress)
+          .setBlockNumber(1)
+          .build());
+    }
+    blockingStubFull.getTransactionContextByIdList(message.build());
   }
 
   @Test

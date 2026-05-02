@@ -63,6 +63,8 @@ import org.tron.api.GrpcAPI.ShieldedTRC20TriggerContractParameters;
 import org.tron.api.GrpcAPI.SpendAuthSigParameters;
 import org.tron.api.GrpcAPI.SpendResult;
 import org.tron.api.GrpcAPI.TransactionApprovedList;
+import org.tron.api.GrpcAPI.TransactionContextList;
+import org.tron.api.GrpcAPI.TransactionContextRequest;
 import org.tron.api.GrpcAPI.TransactionExtention;
 import org.tron.api.GrpcAPI.TransactionIdList;
 import org.tron.api.GrpcAPI.TransactionInfoList;
@@ -2132,6 +2134,20 @@ public class RpcApiService extends RpcService {
       } else {
         responseObserver.onNext(null);
       }
+      responseObserver.onCompleted();
+    }
+
+    @Override
+    public void getTransactionContextByIdList(TransactionContextRequest request,
+        StreamObserver<TransactionContextList> responseObserver) {
+      if (request.getTransactionCount() > TRANSACTION_LIMIT_NUM) {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("transaction count must be <= " + TRANSACTION_LIMIT_NUM)
+            .asRuntimeException());
+        return;
+      }
+      TransactionContextList reply = wallet.getTransactionContextByIdList(request);
+      responseObserver.onNext(reply);
       responseObserver.onCompleted();
     }
 

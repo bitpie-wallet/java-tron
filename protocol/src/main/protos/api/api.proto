@@ -345,6 +345,8 @@ service Wallet {
 
   rpc GetTransactionInfoById (BytesMessage) returns (TransactionInfo) {
   }
+  rpc GetTransactionContextByIdList (TransactionContextRequest) returns (TransactionContextList) {
+  }
 
   rpc AccountPermissionUpdate (AccountPermissionUpdateContract) returns (TransactionExtention) {
   }
@@ -813,6 +815,31 @@ message BlockIndexTimestampSegment {
   int64 endNum = 2;
   int64 startTimestamp = 3;
   int64 missedSlots = 4;
+}
+message TransactionContextLookup {
+  bytes transactionId = 1;
+  int64 blockNumber = 2;
+}
+message TransactionContextRequest {
+  repeated TransactionContextLookup transaction = 1;
+  repeated bytes inputContractAddress = 2;
+  bool includeAllInput = 3;
+}
+message TransactionContext {
+  bytes transactionId = 1;
+  bool found = 2;
+  int64 blockNumber = 3;
+  int64 blockTimestamp = 4;
+  bytes blockid = 5;
+  int32 transactionIndex = 6;
+  bytes fromAddress = 7;
+  bytes toAddress = 8;
+  bytes input = 9;
+  int32 status = 10;
+  repeated TransactionInfo.Log log = 11;
+}
+message TransactionContextList {
+  repeated TransactionContext transaction = 1;
 }
 message TransactionLimit {
   bytes transactionId = 1;
