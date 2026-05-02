@@ -296,7 +296,7 @@ public class Wallet {
   private static final String BROADCAST_TRANS_FAILED = "Broadcast transaction {} failed, {}.";
   private static final int BLOCK_ID_BYTES = 32;
   private static final int BLOCK_INDEX_TIMESTAMP_CHECKPOINT_STRIDE = 100_000;
-  private static final long BLOCK_INDEX_TIMESTAMP_SCAN_WINDOW_LIMIT = 1_024L;
+  private static final long BLOCK_INDEX_TIMESTAMP_SCAN_WINDOW_LIMIT = 100_000L;
   private static final long TRON_MAINNET_BLOCK1_TIMESTAMP_MS = 1_529_891_469_000L;
 
   @Getter
@@ -2136,16 +2136,30 @@ public class Wallet {
       long rangeStart,
       List<byte[]> blockIds,
       Map<Long, TimestampCheckpoint> checkpointCache) {
-    TimestampCheckpoint currentCheckpoint = fetchBlockIndexTimestampCheckpointCached(
-        startBlock, rangeStart, blockIds, checkpointCache);
+    List<BlockHeaderInfo> blockHeaders = new ArrayList<>();
+    chainBaseManager.getBlockStore().getLimitNumberRaw(startBlock, stopBlock - startBlock)
+        .forEach(blockBytes -> blockHeaders.add(parseBlockHeaderInfo(blockBytes)));
+    blockHeaders.sort(Comparator.comparingLong(BlockHeaderInfo::getNumber));
+    if (blockHeaders.size() != stopBlock - startBlock) {
+      throw new IllegalStateException("Block store returned " + blockHeaders.size()
+          + " headers for timestamp scan [" + startBlock + ", " + stopBlock + ")");
+    }
+
+    TimestampCheckpoint currentCheckpoint = timestampCheckpointFromHeaderInfo(
+        blockHeaders.get(0), startBlock, rangeStart, blockIds);
+    validateTimestampCheckpoint(currentCheckpoint);
+    checkpointCache.put(startBlock, currentCheckpoint);
     long currentMissedSlots = missedSlotCount(currentCheckpoint);
     long segmentStart = startBlock;
     long segmentStartTsMs = currentCheckpoint.timestampMs;
     List<TimestampSegment> segments = new ArrayList<>();
 
-    for (long blockNumber = startBlock + 1; blockNumber < stopBlock; blockNumber++) {
-      TimestampCheckpoint checkpoint = fetchBlockIndexTimestampCheckpointCached(
-          blockNumber, rangeStart, blockIds, checkpointCache);
+    for (int index = 1; index < blockHeaders.size(); index++) {
+      long blockNumber = startBlock + index;
+      TimestampCheckpoint checkpoint = timestampCheckpointFromHeaderInfo(
+          blockHeaders.get(index), blockNumber, rangeStart, blockIds);
+      validateTimestampCheckpoint(checkpoint);
+      checkpointCache.put(blockNumber, checkpoint);
       long missedSlots = missedSlotCount(checkpoint);
       if (missedSlots < currentMissedSlots) {
         throw new IllegalStateException("TRON timestamp missed-slot counter decreased at block "
@@ -2170,6 +2184,40 @@ public class Wallet {
         segmentStartTsMs,
         currentMissedSlots));
     return segments;
+  }
+
+  private TimestampCheckpoint timestampCheckpointFromHeaderInfo(
+      BlockHeaderInfo header,
+      long expectedBlockNumber,
+      long rangeStart,
+      List<byte[]> blockIds) {
+    long actualNumber = header.getNumber();
+    if (actualNumber != expectedBlockNumber) {
+      throw new IllegalStateException("Block store returned header " + actualNumber
+          + " for timestamp scan block " + expectedBlockNumber);
+    }
+    byte[] blockHash = header.getBlockid().toByteArray();
+    int offset = (int) (expectedBlockNumber - rangeStart);
+    if (offset >= 0 && offset < blockIds.size()) {
+      byte[] expectedHash = blockIds.get(offset);
+      if (!Arrays.equals(blockHash, expectedHash)) {
+        throw new IllegalStateException("Block index/header hash mismatch for block "
+            + expectedBlockNumber + ": index=" + ByteArray.toHexString(expectedHash)
+            + " header=" + ByteArray.toHexString(blockHash));
+      }
+      if (offset > 0 && !Arrays.equals(header.getParentHash().toByteArray(),
+          blockIds.get(offset - 1))) {
+        throw new IllegalStateException("Block index/header parent mismatch for block "
+            + expectedBlockNumber + ": index previous="
+            + ByteArray.toHexString(blockIds.get(offset - 1)) + " header parent="
+            + ByteArray.toHexString(header.getParentHash().toByteArray()));
+      }
+    }
+    return new TimestampCheckpoint(
+        expectedBlockNumber,
+        blockHash,
+        header.getParentHash().toByteArray(),
+        header.getTimestamp());
   }
 
   private long findFirstMissedSlotIncrease(
