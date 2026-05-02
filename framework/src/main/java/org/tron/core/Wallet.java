@@ -54,12 +54,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -115,6 +117,9 @@ import org.tron.api.GrpcAPI.SpendAuthSigParameters;
 import org.tron.api.GrpcAPI.SpendNote;
 import org.tron.api.GrpcAPI.SpendResult;
 import org.tron.api.GrpcAPI.TransactionApprovedList;
+import org.tron.api.GrpcAPI.TransactionContextList;
+import org.tron.api.GrpcAPI.TransactionContextLookup;
+import org.tron.api.GrpcAPI.TransactionContextRequest;
 import org.tron.api.GrpcAPI.TransactionExtention;
 import org.tron.api.GrpcAPI.TransactionExtention.Builder;
 import org.tron.api.GrpcAPI.TransactionInfoList;
@@ -168,6 +173,7 @@ import org.tron.core.capsule.ProposalCapsule;
 import org.tron.core.capsule.TransactionCapsule;
 import org.tron.core.capsule.TransactionInfoCapsule;
 import org.tron.core.capsule.TransactionResultCapsule;
+import org.tron.core.capsule.TransactionRetCapsule;
 import org.tron.core.capsule.VotesCapsule;
 import org.tron.core.capsule.WitnessCapsule;
 import org.tron.core.capsule.utils.MarketUtils;
@@ -2452,6 +2458,156 @@ public class Wallet {
     }
 
     return transactionInfoCapsule == null ? null : transactionInfoCapsule.getInstance();
+  }
+
+  public TransactionContextList getTransactionContextByIdList(TransactionContextRequest request) {
+    TransactionContextList.Builder result = TransactionContextList.newBuilder();
+    if (Objects.isNull(request) || request.getTransactionCount() == 0) {
+      return result.build();
+    }
+
+    List<GrpcAPI.TransactionContext.Builder> builders = new ArrayList<>(request.getTransactionCount());
+    Map<Long, List<Integer>> indexesByBlock = new HashMap<>();
+    for (int index = 0; index < request.getTransactionCount(); index++) {
+      TransactionContextLookup lookup = request.getTransaction(index);
+      ByteString transactionId = lookup.getTransactionId();
+      GrpcAPI.TransactionContext.Builder builder = GrpcAPI.TransactionContext.newBuilder()
+          .setTransactionId(transactionId);
+      builders.add(builder);
+      if (transactionId.isEmpty()) {
+        continue;
+      }
+
+      long blockNumber = lookup.getBlockNumber();
+      if (blockNumber <= 0) {
+        try {
+          blockNumber = chainBaseManager.getTransactionStore()
+              .getBlockNumber(transactionId.toByteArray());
+        } catch (BadItemException e) {
+          logger.debug(
+              "Failed to resolve transaction block number for {}",
+              ByteArray.toHexString(transactionId.toByteArray()),
+              e);
+          blockNumber = -1;
+        }
+      }
+      if (blockNumber <= 0) {
+        continue;
+      }
+      builder.setBlockNumber(blockNumber);
+      indexesByBlock.computeIfAbsent(blockNumber, ignored -> new ArrayList<>()).add(index);
+    }
+
+    Set<ByteString> inputContractAddresses = new HashSet<>(request.getInputContractAddressList());
+    for (Entry<Long, List<Integer>> entry : indexesByBlock.entrySet()) {
+      fillTransactionContextsForBlock(
+          entry.getKey(), entry.getValue(), builders, inputContractAddresses,
+          request.getIncludeAllInput());
+    }
+
+    builders.forEach(builder -> result.addTransaction(builder.build()));
+    return result.build();
+  }
+
+  private void fillTransactionContextsForBlock(
+      long blockNumber,
+      List<Integer> requestIndexes,
+      List<GrpcAPI.TransactionContext.Builder> builders,
+      Set<ByteString> inputContractAddresses,
+      boolean includeAllInput) {
+    BlockCapsule blockCapsule = getBlockCapsuleByNum(blockNumber);
+    if (Objects.isNull(blockCapsule)) {
+      return;
+    }
+
+    Map<ByteString, List<Integer>> indexesByTransactionId = new HashMap<>();
+    for (int requestIndex : requestIndexes) {
+      ByteString transactionId = builders.get(requestIndex).getTransactionId();
+      indexesByTransactionId
+          .computeIfAbsent(transactionId, ignored -> new ArrayList<>())
+          .add(requestIndex);
+    }
+
+    Map<ByteString, TransactionInfo> infoByTransactionId = transactionInfoByIdForBlock(blockNumber);
+    List<TransactionCapsule> transactions = blockCapsule.getTransactions();
+    for (int transactionIndex = 0; transactionIndex < transactions.size(); transactionIndex++) {
+      TransactionCapsule transactionCapsule = transactions.get(transactionIndex);
+      ByteString transactionId = transactionCapsule.getTransactionId().getByteString();
+      List<Integer> matchingIndexes = indexesByTransactionId.get(transactionId);
+      if (CollectionUtils.isEmpty(matchingIndexes)) {
+        continue;
+      }
+
+      TransactionInfo transactionInfo = infoByTransactionId.get(transactionId);
+      if (Objects.isNull(transactionInfo)) {
+        transactionInfo = getTransactionInfoById(transactionId);
+      }
+      if (Objects.isNull(transactionInfo)) {
+        continue;
+      }
+
+      for (int requestIndex : matchingIndexes) {
+        GrpcAPI.TransactionContext.Builder builder = builders.get(requestIndex);
+        builder
+            .setFound(true)
+            .setBlockNumber(blockNumber)
+            .setBlockTimestamp(blockCapsule.getTimeStamp())
+            .setBlockid(blockCapsule.getBlockId().getByteString())
+            .setTransactionIndex(transactionIndex)
+            .setStatus(transactionInfo.getResultValue() == 0 ? 1 : 0)
+            .addAllLog(transactionInfo.getLogList());
+        fillTransactionContractContext(
+            builder, transactionCapsule.getInstance(), inputContractAddresses, includeAllInput);
+      }
+    }
+  }
+
+  private Map<ByteString, TransactionInfo> transactionInfoByIdForBlock(long blockNumber) {
+    Map<ByteString, TransactionInfo> infoByTransactionId = new HashMap<>();
+    try {
+      TransactionRetCapsule result = chainBaseManager.getTransactionRetStore()
+          .getTransactionInfoByBlockNum(ByteArray.fromLong(blockNumber));
+      if (!Objects.isNull(result) && !Objects.isNull(result.getInstance())) {
+        result.getInstance().getTransactioninfoList().forEach(
+            transactionInfo -> infoByTransactionId.put(transactionInfo.getId(), transactionInfo));
+      }
+    } catch (BadItemException e) {
+      logger.debug("Failed to read transaction results for block {}", blockNumber, e);
+    }
+    return infoByTransactionId;
+  }
+
+  private void fillTransactionContractContext(
+      GrpcAPI.TransactionContext.Builder builder,
+      Transaction transaction,
+      Set<ByteString> inputContractAddresses,
+      boolean includeAllInput) {
+    if (transaction.getRawData().getContractCount() == 0) {
+      return;
+    }
+
+    Contract contract = transaction.getRawData().getContract(0);
+    byte[] ownerAddress = TransactionCapsule.getOwner(contract);
+    if (!ArrayUtils.isEmpty(ownerAddress)) {
+      builder.setFromAddress(ByteString.copyFrom(ownerAddress));
+    }
+
+    if (contract.getType() != ContractType.TriggerSmartContract) {
+      return;
+    }
+    try {
+      TriggerSmartContract trigger = contract.getParameter().unpack(TriggerSmartContract.class);
+      ByteString contractAddress = trigger.getContractAddress();
+      builder.setToAddress(contractAddress);
+      if (includeAllInput || inputContractAddresses.contains(contractAddress)) {
+        builder.setInput(trigger.getData());
+      }
+    } catch (InvalidProtocolBufferException e) {
+      logger.debug(
+          "Could not unpack TriggerSmartContract for {}",
+          ByteArray.toHexString(builder.getTransactionId().toByteArray()),
+          e);
+    }
   }
 
   public Proposal getProposalById(ByteString proposalId) {

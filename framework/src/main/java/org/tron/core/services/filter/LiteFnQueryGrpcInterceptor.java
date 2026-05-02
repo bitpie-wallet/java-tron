@@ -41,6 +41,7 @@ public class LiteFnQueryGrpcInterceptor implements ServerInterceptor {
     filterMethods.add("protocol.Wallet/GetMerkleTreeVoucherInfo");
     filterMethods.add("protocol.Wallet/GetTransactionById");
     filterMethods.add("protocol.Wallet/GetTransactionCountByBlockNum");
+    filterMethods.add("protocol.Wallet/GetTransactionContextByIdList");
     filterMethods.add("protocol.Wallet/GetTransactionInfoById");
     filterMethods.add("protocol.Wallet/IsSpend");
     filterMethods.add("protocol.Wallet/ScanAndMarkNoteByIvk");

@@ -160,6 +160,20 @@ public class LiteFnQueryGrpcInterceptorTest {
   }
 
   @Test
+  public void testGrpcTransactionContextBatchThrowStatusRuntimeException() {
+    final GrpcAPI.TransactionContextRequest message = GrpcAPI.TransactionContextRequest.newBuilder()
+        .addTransaction(GrpcAPI.TransactionContextLookup.newBuilder()
+            .setTransactionId(GrpcAPI.BytesMessage.newBuilder().getValue())
+            .setBlockNumber(1)
+            .build())
+        .build();
+    chainBaseManager.setNodeType(ChainBaseManager.NodeType.LITE);
+    thrown.expect(StatusRuntimeException.class);
+    thrown.expectMessage(ERROR_MSG);
+    blockingStubFull.getTransactionContextByIdList(message);
+  }
+
+  @Test
   public void testGrpcSolidityThrowStatusRuntimeException() {
     final GrpcAPI.NumberMessage message = GrpcAPI.NumberMessage.newBuilder().setNum(0).build();
     chainBaseManager.setNodeType(ChainBaseManager.NodeType.LITE);
