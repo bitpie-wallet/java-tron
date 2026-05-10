@@ -122,6 +122,8 @@ import org.tron.api.GrpcAPI.TransactionContextLookup;
 import org.tron.api.GrpcAPI.TransactionContextRequest;
 import org.tron.api.GrpcAPI.TransactionExtention;
 import org.tron.api.GrpcAPI.TransactionExtention.Builder;
+import org.tron.api.GrpcAPI.TransactionInfoBlock;
+import org.tron.api.GrpcAPI.TransactionInfoBlockList;
 import org.tron.api.GrpcAPI.TransactionInfoList;
 import org.tron.api.GrpcAPI.WitnessList;
 import org.tron.common.crypto.Hash;
@@ -3524,6 +3526,18 @@ public class Wallet {
 
   public TransactionInfoList getTransactionInfoByBlockNum(long blockNum) {
     return dbManager.getTransactionInfoByBlockNum(blockNum);
+  }
+
+  public TransactionInfoBlockList getTransactionInfoByBlockNumRange(long startNum, long limit) {
+    TransactionInfoBlockList.Builder result = TransactionInfoBlockList.newBuilder();
+    long endNum = startNum + limit;
+    for (long blockNum = startNum; blockNum < endNum; blockNum++) {
+      TransactionInfoList transactionInfoList = dbManager.getTransactionInfoByBlockNum(blockNum);
+      result.addBlock(TransactionInfoBlock.newBuilder()
+          .setBlockNumber(blockNum)
+          .addAllTransactionInfo(transactionInfoList.getTransactionInfoList()));
+    }
+    return result.build();
   }
 
   public NodeList listNodes() {

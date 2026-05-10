@@ -67,6 +67,7 @@ import org.tron.api.GrpcAPI.TransactionContextList;
 import org.tron.api.GrpcAPI.TransactionContextRequest;
 import org.tron.api.GrpcAPI.TransactionExtention;
 import org.tron.api.GrpcAPI.TransactionIdList;
+import org.tron.api.GrpcAPI.TransactionInfoBlockList;
 import org.tron.api.GrpcAPI.TransactionInfoList;
 import org.tron.api.GrpcAPI.TransactionList;
 import org.tron.api.GrpcAPI.TransactionListExtention;
@@ -174,6 +175,7 @@ public class RpcApiService extends RpcService {
   private static final long BLOCK_HEADER_LIMIT_NUM = 100_000;
   private static final long BLOCK_ID_LIMIT_NUM = 1_000_000;
   private static final long TRANSACTION_LIMIT_NUM = 1000;
+  private static final long TRANSACTION_INFO_BLOCK_LIMIT_NUM = 10_000;
   @Autowired
   private Manager dbManager;
   @Autowired
@@ -2633,6 +2635,29 @@ public class RpcApiService extends RpcService {
         responseObserver.onNext(wallet.getTransactionInfoByBlockNum(request.getNum()));
       } catch (Exception e) {
         responseObserver.onError(getRunTimeException(e));
+      }
+
+      responseObserver.onCompleted();
+    }
+
+    @Override
+    public void getTransactionInfoByBlockNumRange(BlockLimit request,
+        StreamObserver<TransactionInfoBlockList> responseObserver) {
+      long startNum = request.getStartNum();
+      long endNum = request.getEndNum();
+      if (endNum <= startNum || endNum - startNum > TRANSACTION_INFO_BLOCK_LIMIT_NUM) {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("endNum must be greater than startNum and span must be <= "
+                + TRANSACTION_INFO_BLOCK_LIMIT_NUM)
+            .asRuntimeException());
+        return;
+      }
+
+      try {
+        responseObserver.onNext(wallet.getTransactionInfoByBlockNumRange(startNum, endNum - startNum));
+      } catch (Exception e) {
+        responseObserver.onError(getRunTimeException(e));
+        return;
       }
 
       responseObserver.onCompleted();

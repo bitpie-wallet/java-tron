@@ -345,6 +345,8 @@ service Wallet {
 
   rpc GetTransactionInfoById (BytesMessage) returns (TransactionInfo) {
   }
+  rpc GetTransactionInfoByBlockNumRange (BlockLimit) returns (TransactionInfoBlockList) {
+  }
   rpc GetTransactionContextByIdList (TransactionContextRequest) returns (TransactionContextList) {
   }
 
@@ -1120,6 +1122,13 @@ message SpendResult {
 
 message TransactionInfoList {
   repeated TransactionInfo transactionInfo = 1;
+}
+message TransactionInfoBlock {
+  int64 blockNumber = 1;
+  repeated TransactionInfo transactionInfo = 2;
+}
+message TransactionInfoBlockList {
+  repeated TransactionInfoBlock block = 1;
 }
 
 message SpendNoteTRC20 {
