@@ -63,6 +63,7 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -1906,6 +1907,39 @@ public class Wallet {
     }
   }
 
+  public BytesMessage getCompactHistoryWireByLimitNext(long number, long limit) {
+    if (limit <= 0) {
+      return BytesMessage.getDefaultInstance();
+    }
+    try {
+      ByteString.Output output = ByteString.newOutput();
+      CodedOutputStream codedOutput = CodedOutputStream.newInstance(output);
+      CompletableFuture<List<BlockCapsule>> blockCapsulesFuture = CompletableFuture.supplyAsync(
+          () -> chainBaseManager.getBlockStore().getLimitNumber(number, limit));
+      CompletableFuture<List<TransactionInfoList>> transactionInfoListsFuture =
+          CompletableFuture.supplyAsync(() -> getTransactionInfoListsByBlockNumRange(number, limit));
+      List<BlockCapsule> blockCapsules = blockCapsulesFuture.join();
+      List<TransactionInfoList> transactionInfoLists = transactionInfoListsFuture.join();
+      List<CompletableFuture<ByteString>> encodedBlockFutures = new ArrayList<>(blockCapsules.size());
+      for (int blockIndex = 0; blockIndex < blockCapsules.size(); blockIndex++) {
+        int currentBlockIndex = blockIndex;
+        encodedBlockFutures.add(CompletableFuture.supplyAsync(
+            () -> encodeCompactHistoryBlockWire(
+                blockCapsules.get(currentBlockIndex),
+                transactionInfoLists.get(currentBlockIndex))));
+      }
+      codedOutput.writeUInt32NoTag(1);
+      codedOutput.writeUInt32NoTag(blockCapsules.size());
+      for (CompletableFuture<ByteString> encodedBlockFuture : encodedBlockFutures) {
+        codedOutput.writeRawBytes(encodedBlockFuture.join());
+      }
+      codedOutput.flush();
+      return BytesMessage.newBuilder().setValue(output.toByteString()).build();
+    } catch (IOException e) {
+      throw new IllegalStateException("failed to encode compact history wire range", e);
+    }
+  }
+
   public CompactBlockTransactionInfoList getCompactBlocksAndTransactionInfoByLimitNext(
       long number, long limit) {
     if (limit <= 0) {
@@ -1962,6 +1996,65 @@ public class Wallet {
       Transaction.Contract contract = transaction.getRawData().getContract(0);
       output.writeUInt32NoTag(contract.getSerializedSize());
       contract.writeTo(output);
+    }
+  }
+
+  private List<TransactionInfoList> getTransactionInfoListsByBlockNumRange(long startNum, long limit) {
+    List<TransactionInfoList> transactionInfoLists = new ArrayList<>((int) limit);
+    long endNum = startNum + limit;
+    for (long blockNum = startNum; blockNum < endNum; blockNum++) {
+      transactionInfoLists.add(dbManager.getTransactionInfoByBlockNum(blockNum));
+    }
+    return transactionInfoLists;
+  }
+
+  private ByteString encodeCompactHistoryBlockWire(
+      BlockCapsule blockCapsule,
+      TransactionInfoList transactionInfoList
+  ) {
+    try {
+      ByteString.Output output = ByteString.newOutput();
+      CodedOutputStream codedOutput = CodedOutputStream.newInstance(output);
+      writeCompactHistoryBlockWire(codedOutput, blockCapsule, transactionInfoList);
+      codedOutput.flush();
+      return output.toByteString();
+    } catch (IOException e) {
+      throw new IllegalStateException("failed to encode compact history wire block", e);
+    }
+  }
+
+  private void writeCompactHistoryBlockWire(
+      CodedOutputStream output,
+      BlockCapsule blockCapsule,
+      TransactionInfoList transactionInfoList
+  ) throws IOException {
+    Protocol.Block block = blockCapsule.getInstance();
+    Protocol.BlockHeader.raw rawData = block.getBlockHeader().getRawData();
+    ByteString parentHash = rawData.getParentHash();
+    output.writeInt64NoTag(rawData.getNumber());
+    output.writeRawBytes(blockCapsule.getBlockId().getBytes());
+    output.writeUInt32NoTag(parentHash.size());
+    output.writeRawBytes(parentHash.toByteArray());
+    output.writeInt64NoTag(rawData.getTimestamp());
+    output.writeUInt32NoTag(block.getTransactionsCount());
+    output.writeUInt32NoTag(transactionInfoList.getTransactionInfoCount());
+    for (int txIndex = 0; txIndex < block.getTransactionsCount(); txIndex++) {
+      Transaction transaction = block.getTransactions(txIndex);
+      output.writeUInt32NoTag(transaction.getSignatureCount());
+      if (transaction.getRawData().getContractCount() == 0) {
+        output.writeUInt32NoTag(0);
+      } else {
+        Transaction.Contract contract = transaction.getRawData().getContract(0);
+        output.writeUInt32NoTag(contract.getSerializedSize());
+        contract.writeTo(output);
+      }
+      if (txIndex >= transactionInfoList.getTransactionInfoCount()) {
+        output.writeUInt32NoTag(0);
+        continue;
+      }
+      TransactionInfo transactionInfo = transactionInfoList.getTransactionInfo(txIndex);
+      output.writeUInt32NoTag(transactionInfo.getSerializedSize());
+      transactionInfo.writeTo(output);
     }
   }
 
