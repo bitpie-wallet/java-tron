@@ -248,6 +248,12 @@ service Wallet {
   //Use this function instead of GetBlockByLimitNext.
   rpc GetBlockByLimitNext2 (BlockLimit) returns (BlockListExtention) {
   }
+  rpc GetCompactBlockByLimitNext (BlockLimit) returns (CompactBlockList) {
+  }
+  rpc GetCompactBlockWireByLimitNext (BlockLimit) returns (BytesMessage) {
+  }
+  rpc GetCompactBlockAndTransactionInfoByLimitNext (BlockLimit) returns (CompactBlockTransactionInfoList) {
+  }
   rpc GetBlockHeaderByLimitNext (BlockLimit) returns (BlockHeaderList) {
   }
   rpc GetBlockIdByLimitNext (BlockLimit) returns (BlockIdList) {
@@ -811,6 +817,27 @@ message BlockIndexRange {
   repeated int64 timestamps = 4;
   bytes first_parent_hash = 5;
   repeated BlockIndexTimestampSegment timestamp_segment = 6;
+}
+message CompactBlockTransaction {
+  Transaction.Contract contract = 1;
+  int32 signature_count = 2;
+}
+message CompactBlock {
+  int64 number = 1;
+  bytes blockid = 2;
+  bytes parent_hash = 3;
+  int64 timestamp = 4;
+  repeated CompactBlockTransaction transaction = 5;
+}
+message CompactBlockList {
+  repeated CompactBlock block = 1;
+}
+message CompactBlockTransactionInfo {
+  CompactBlock block = 1;
+  repeated TransactionInfo transaction_info = 2;
+}
+message CompactBlockTransactionInfoList {
+  repeated CompactBlockTransactionInfo block = 1;
 }
 message BlockIndexTimestampSegment {
   int64 startNum = 1;
