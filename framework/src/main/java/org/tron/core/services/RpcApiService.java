@@ -171,7 +171,7 @@ public class RpcApiService extends RpcService {
   public static final String CONTRACT_VALIDATE_EXCEPTION = "ContractValidateException: {}";
   private static final String EXCEPTION_CAUGHT = "exception caught";
   private static final String UNKNOWN_EXCEPTION_CAUGHT = "unknown exception caught: ";
-  private static final long BLOCK_LIMIT_NUM = 100;
+  private static final long BLOCK_LIMIT_NUM = 1_024;
   private static final long BLOCK_HEADER_LIMIT_NUM = 100_000;
   private static final long BLOCK_ID_LIMIT_NUM = 1_000_000;
   private static final long TRANSACTION_LIMIT_NUM = 1000;
