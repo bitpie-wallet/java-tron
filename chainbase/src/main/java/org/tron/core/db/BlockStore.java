@@ -43,6 +43,11 @@ public class BlockStore extends TronStoreWithRevoking<BlockCapsule> {
     return pack(revokingDB.getValuesNext(startBlockId.getBytes(), limit));
   }
 
+  public List<BlockCapsule> getLimitNumberWithoutTransactions(long startNumber, long limit) {
+    BlockId startBlockId = new BlockId(Sha256Hash.ZERO_HASH, startNumber);
+    return pack(revokingDB.getValuesNext(startBlockId.getBytes(), limit), false);
+  }
+
   public List<byte[]> getLimitNumberRaw(long startNumber, long limit) {
     BlockId startBlockId = new BlockId(Sha256Hash.ZERO_HASH, startNumber);
     return new ArrayList<>(revokingDB.getValuesNext(startBlockId.getBytes(), limit));
@@ -53,10 +58,14 @@ public class BlockStore extends TronStoreWithRevoking<BlockCapsule> {
   }
 
   private List<BlockCapsule> pack(Set<byte[]> values) {
+    return pack(values, true);
+  }
+
+  private List<BlockCapsule> pack(Set<byte[]> values, boolean initTransactions) {
     List<BlockCapsule> blocks = new ArrayList<>();
     for (byte[] bytes : values) {
       try {
-        blocks.add(new BlockCapsule(bytes));
+        blocks.add(new BlockCapsule(bytes, initTransactions));
       } catch (BadItemException e) {
         logger.error("Find bad item: {}", e.getMessage());
         // throw new TronDBException(e);

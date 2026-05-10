@@ -1925,7 +1925,7 @@ public class Wallet {
       ByteString.Output output = ByteString.newOutput();
       CodedOutputStream codedOutput = CodedOutputStream.newInstance(output);
       CompletableFuture<List<BlockCapsule>> blockCapsulesFuture = CompletableFuture.supplyAsync(
-          () -> chainBaseManager.getBlockStore().getLimitNumber(number, limit));
+          () -> chainBaseManager.getBlockStore().getLimitNumberWithoutTransactions(number, limit));
       CompletableFuture<List<TransactionInfoList>> transactionInfoListsFuture =
           CompletableFuture.supplyAsync(() -> getTransactionInfoListsByBlockNumRange(number, limit));
       List<BlockCapsule> blockCapsules = blockCapsulesFuture.join();
