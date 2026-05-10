@@ -124,9 +124,15 @@ public class BlockCapsule implements ProtoCapsule<Block> {
   }
 
   public BlockCapsule(byte[] data) throws BadItemException {
+    this(data, true);
+  }
+
+  public BlockCapsule(byte[] data, boolean initTransactions) throws BadItemException {
     try {
       this.block = Block.parseFrom(data);
-      initTxs();
+      if (initTransactions) {
+        initTxs();
+      }
     } catch (InvalidProtocolBufferException e) {
       throw new BadItemException("Block proto data parse exception");
     }
