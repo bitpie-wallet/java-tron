@@ -252,6 +252,8 @@ service Wallet {
   }
   rpc GetCompactBlockWireByLimitNext (BlockLimit) returns (BytesMessage) {
   }
+  rpc GetCompactHistoryWireByLimitNext (BlockLimit) returns (BytesMessage) {
+  }
   rpc GetCompactBlockAndTransactionInfoByLimitNext (BlockLimit) returns (CompactBlockTransactionInfoList) {
   }
   rpc GetBlockHeaderByLimitNext (BlockLimit) returns (BlockHeaderList) {

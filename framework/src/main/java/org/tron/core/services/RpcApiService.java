@@ -1745,6 +1745,25 @@ public class RpcApiService extends RpcService {
     }
 
     @Override
+    public void getCompactHistoryWireByLimitNext(BlockLimit request,
+        StreamObserver<BytesMessage> responseObserver) {
+      long startNum = request.getStartNum();
+      long endNum = request.getEndNum();
+
+      if (endNum > 0 && endNum > startNum && endNum - startNum <= BLOCK_LIMIT_NUM) {
+        responseObserver.onNext(
+            wallet.getCompactHistoryWireByLimitNext(startNum, endNum - startNum));
+      } else {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("endNum must be greater than startNum and span must be <= "
+                + BLOCK_LIMIT_NUM)
+            .asRuntimeException());
+        return;
+      }
+      responseObserver.onCompleted();
+    }
+
+    @Override
     public void getCompactBlockAndTransactionInfoByLimitNext(BlockLimit request,
         StreamObserver<CompactBlockTransactionInfoList> responseObserver) {
       long startNum = request.getStartNum();
