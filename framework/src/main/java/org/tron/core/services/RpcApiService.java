@@ -29,6 +29,8 @@ import org.tron.api.GrpcAPI.BlockListExtention;
 import org.tron.api.GrpcAPI.BlockReference;
 import org.tron.api.GrpcAPI.BytesMessage;
 import org.tron.api.GrpcAPI.CanWithdrawUnfreezeAmountRequestMessage;
+import org.tron.api.GrpcAPI.CompactBlockList;
+import org.tron.api.GrpcAPI.CompactBlockTransactionInfoList;
 import org.tron.api.GrpcAPI.DecryptNotes;
 import org.tron.api.GrpcAPI.DecryptNotesMarked;
 import org.tron.api.GrpcAPI.DecryptNotesTRC20;
@@ -1700,6 +1702,63 @@ public class RpcApiService extends RpcService {
             .onNext(blockList2Extention(wallet.getBlocksByLimitNext(startNum, endNum - startNum)));
       } else {
         responseObserver.onNext(null);
+      }
+      responseObserver.onCompleted();
+    }
+
+    @Override
+    public void getCompactBlockByLimitNext(BlockLimit request,
+        StreamObserver<CompactBlockList> responseObserver) {
+      long startNum = request.getStartNum();
+      long endNum = request.getEndNum();
+
+      if (endNum > 0 && endNum > startNum && endNum - startNum <= BLOCK_LIMIT_NUM) {
+        responseObserver.onNext(
+            wallet.getCompactBlocksByLimitNext(startNum, endNum - startNum));
+      } else {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("endNum must be greater than startNum and span must be <= "
+                + BLOCK_LIMIT_NUM)
+            .asRuntimeException());
+        return;
+      }
+      responseObserver.onCompleted();
+    }
+
+    @Override
+    public void getCompactBlockWireByLimitNext(BlockLimit request,
+        StreamObserver<BytesMessage> responseObserver) {
+      long startNum = request.getStartNum();
+      long endNum = request.getEndNum();
+
+      if (endNum > 0 && endNum > startNum && endNum - startNum <= BLOCK_LIMIT_NUM) {
+        responseObserver.onNext(
+            wallet.getCompactBlockWireByLimitNext(startNum, endNum - startNum));
+      } else {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("endNum must be greater than startNum and span must be <= "
+                + BLOCK_LIMIT_NUM)
+            .asRuntimeException());
+        return;
+      }
+      responseObserver.onCompleted();
+    }
+
+    @Override
+    public void getCompactBlockAndTransactionInfoByLimitNext(BlockLimit request,
+        StreamObserver<CompactBlockTransactionInfoList> responseObserver) {
+      long startNum = request.getStartNum();
+      long endNum = request.getEndNum();
+
+      if (endNum > 0 && endNum > startNum && endNum - startNum <= BLOCK_LIMIT_NUM) {
+        responseObserver.onNext(
+            wallet.getCompactBlocksAndTransactionInfoByLimitNext(startNum, endNum - startNum));
+      } else {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("endNum must be greater than startNum and span must be <= "
+                + BLOCK_LIMIT_NUM)
+            .asRuntimeException());
+        return;
       }
       responseObserver.onCompleted();
     }

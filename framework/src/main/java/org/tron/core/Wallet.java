@@ -44,6 +44,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Range;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.CodedInputStream;
+import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.ExtensionRegistryLite;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.WireFormat;
@@ -86,6 +87,11 @@ import org.tron.api.GrpcAPI.BlockIndexRange;
 import org.tron.api.GrpcAPI.BlockIndexTimestampSegment;
 import org.tron.api.GrpcAPI.BlockList;
 import org.tron.api.GrpcAPI.BytesMessage;
+import org.tron.api.GrpcAPI.CompactBlock;
+import org.tron.api.GrpcAPI.CompactBlockList;
+import org.tron.api.GrpcAPI.CompactBlockTransaction;
+import org.tron.api.GrpcAPI.CompactBlockTransactionInfo;
+import org.tron.api.GrpcAPI.CompactBlockTransactionInfoList;
 import org.tron.api.GrpcAPI.DecryptNotes;
 import org.tron.api.GrpcAPI.DecryptNotes.NoteTx;
 import org.tron.api.GrpcAPI.DecryptNotesTRC20;
@@ -1867,6 +1873,96 @@ public class Wallet {
     chainBaseManager.getBlockStore().getLimitNumber(number, limit).forEach(
         blockCapsule -> blockListBuilder.addBlock(blockCapsule.getInstance()));
     return blockListBuilder.build();
+  }
+
+  public CompactBlockList getCompactBlocksByLimitNext(long number, long limit) {
+    if (limit <= 0) {
+      return CompactBlockList.getDefaultInstance();
+    }
+    CompactBlockList.Builder compactBlockListBuilder = CompactBlockList.newBuilder();
+    chainBaseManager.getBlockStore().getLimitNumber(number, limit)
+        .forEach(blockCapsule -> compactBlockListBuilder.addBlock(toCompactBlock(blockCapsule)));
+    return compactBlockListBuilder.build();
+  }
+
+  public BytesMessage getCompactBlockWireByLimitNext(long number, long limit) {
+    if (limit <= 0) {
+      return BytesMessage.getDefaultInstance();
+    }
+    try {
+      ByteString.Output output = ByteString.newOutput();
+      CodedOutputStream codedOutput = CodedOutputStream.newInstance(output);
+      List<BlockCapsule> blockCapsules = chainBaseManager.getBlockStore()
+          .getLimitNumber(number, limit);
+      codedOutput.writeUInt32NoTag(1);
+      codedOutput.writeUInt32NoTag(blockCapsules.size());
+      for (BlockCapsule blockCapsule : blockCapsules) {
+        writeCompactBlockWire(codedOutput, blockCapsule);
+      }
+      codedOutput.flush();
+      return BytesMessage.newBuilder().setValue(output.toByteString()).build();
+    } catch (IOException e) {
+      throw new IllegalStateException("failed to encode compact block wire range", e);
+    }
+  }
+
+  public CompactBlockTransactionInfoList getCompactBlocksAndTransactionInfoByLimitNext(
+      long number, long limit) {
+    if (limit <= 0) {
+      return CompactBlockTransactionInfoList.getDefaultInstance();
+    }
+    CompactBlockTransactionInfoList.Builder result =
+        CompactBlockTransactionInfoList.newBuilder();
+    chainBaseManager.getBlockStore().getLimitNumber(number, limit).forEach(blockCapsule -> {
+      long blockNum = blockCapsule.getNum();
+      TransactionInfoList transactionInfoList = dbManager.getTransactionInfoByBlockNum(blockNum);
+      result.addBlock(CompactBlockTransactionInfo.newBuilder()
+          .setBlock(toCompactBlock(blockCapsule))
+          .addAllTransactionInfo(transactionInfoList.getTransactionInfoList()));
+    });
+    return result.build();
+  }
+
+  private CompactBlock toCompactBlock(BlockCapsule blockCapsule) {
+    Protocol.Block block = blockCapsule.getInstance();
+    Protocol.BlockHeader.raw rawData = block.getBlockHeader().getRawData();
+    CompactBlock.Builder compactBlock = CompactBlock.newBuilder()
+        .setNumber(rawData.getNumber())
+        .setBlockid(ByteString.copyFrom(blockCapsule.getBlockId().getBytes()))
+        .setParentHash(rawData.getParentHash())
+        .setTimestamp(rawData.getTimestamp());
+    for (Transaction transaction : block.getTransactionsList()) {
+      CompactBlockTransaction.Builder compactTransaction = CompactBlockTransaction.newBuilder()
+          .setSignatureCount(transaction.getSignatureCount());
+      if (transaction.getRawData().getContractCount() > 0) {
+        compactTransaction.setContract(transaction.getRawData().getContract(0));
+      }
+      compactBlock.addTransaction(compactTransaction);
+    }
+    return compactBlock.build();
+  }
+
+  private void writeCompactBlockWire(CodedOutputStream output, BlockCapsule blockCapsule)
+      throws IOException {
+    Protocol.Block block = blockCapsule.getInstance();
+    Protocol.BlockHeader.raw rawData = block.getBlockHeader().getRawData();
+    ByteString parentHash = rawData.getParentHash();
+    output.writeInt64NoTag(rawData.getNumber());
+    output.writeRawBytes(blockCapsule.getBlockId().getBytes());
+    output.writeUInt32NoTag(parentHash.size());
+    output.writeRawBytes(parentHash.toByteArray());
+    output.writeInt64NoTag(rawData.getTimestamp());
+    output.writeUInt32NoTag(block.getTransactionsCount());
+    for (Transaction transaction : block.getTransactionsList()) {
+      output.writeUInt32NoTag(transaction.getSignatureCount());
+      if (transaction.getRawData().getContractCount() == 0) {
+        output.writeUInt32NoTag(0);
+        continue;
+      }
+      Transaction.Contract contract = transaction.getRawData().getContract(0);
+      output.writeUInt32NoTag(contract.getSerializedSize());
+      contract.writeTo(output);
+    }
   }
 
   public BlockHeaderList getBlockHeadersByLimitNext(long number, long limit) {
