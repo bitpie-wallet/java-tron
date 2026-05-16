@@ -53,6 +53,11 @@ public class BlockStore extends TronStoreWithRevoking<BlockCapsule> {
     return new ArrayList<>(revokingDB.getValuesNext(startBlockId.getBytes(), limit));
   }
 
+  public List<byte[]> getLimitNumberRawInOrder(long startNumber, long limit) {
+    BlockId startBlockId = new BlockId(Sha256Hash.ZERO_HASH, startNumber);
+    return revokingDB.getValuesNextInOrder(startBlockId.getBytes(), limit);
+  }
+
   public List<BlockCapsule> getBlockByLatestNum(long getNum) {
     return pack(revokingDB.getlatestValues(getNum));
   }
