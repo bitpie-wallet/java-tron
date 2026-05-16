@@ -103,6 +103,7 @@ import org.tron.core.exception.StoreException;
 import org.tron.core.exception.VMIllegalException;
 import org.tron.core.exception.ZksnarkException;
 import org.tron.core.metrics.MetricsApiService;
+import org.tron.core.services.bulk.RawHistoryFrameStreamer;
 import org.tron.core.services.http.Util;
 import org.tron.core.utils.TransactionUtil;
 import org.tron.core.zen.address.DiversifierT;
@@ -1753,6 +1754,33 @@ public class RpcApiService extends RpcService {
       if (endNum > 0 && endNum > startNum && endNum - startNum <= BLOCK_LIMIT_NUM) {
         responseObserver.onNext(
             wallet.getCompactHistoryWireByLimitNext(startNum, endNum - startNum));
+      } else {
+        responseObserver.onError(Status.INVALID_ARGUMENT
+            .withDescription("endNum must be greater than startNum and span must be <= "
+                + BLOCK_LIMIT_NUM)
+            .asRuntimeException());
+        return;
+      }
+      responseObserver.onCompleted();
+    }
+
+    @Override
+    public void getRawHistoryFrameByLimitNext(BlockLimit request,
+        StreamObserver<BytesMessage> responseObserver) {
+      long startNum = request.getStartNum();
+      long endNum = request.getEndNum();
+
+      if (endNum > 0 && endNum > startNum && endNum - startNum <= BLOCK_LIMIT_NUM) {
+        try {
+          RawHistoryFrameStreamer.streamByLimitNext(
+              chainBaseManager, startNum, endNum - startNum, responseObserver);
+        } catch (RuntimeException e) {
+          responseObserver.onError(Status.INTERNAL
+              .withDescription("failed to stream raw history frames")
+              .withCause(e)
+              .asRuntimeException());
+          return;
+        }
       } else {
         responseObserver.onError(Status.INVALID_ARGUMENT
             .withDescription("endNum must be greater than startNum and span must be <= "

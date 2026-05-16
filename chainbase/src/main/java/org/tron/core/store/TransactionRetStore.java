@@ -82,4 +82,8 @@ public class TransactionRetStore extends TronStoreWithRevoking<TransactionRetCap
     return new TransactionRetCapsule(value);
   }
 
+  public byte[] getTransactionInfoByBlockNumRaw(long blockNum) {
+    return revokingDB.getUnchecked(ByteArray.fromLong(blockNum));
+  }
+
 }
