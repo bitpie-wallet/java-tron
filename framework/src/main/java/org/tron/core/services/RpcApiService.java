@@ -175,6 +175,7 @@ public class RpcApiService extends RpcService {
   private static final String EXCEPTION_CAUGHT = "exception caught";
   private static final String UNKNOWN_EXCEPTION_CAUGHT = "unknown exception caught: ";
   private static final long BLOCK_LIMIT_NUM = 1_024;
+  private static final long RAW_HISTORY_FRAME_BLOCK_LIMIT_NUM = 4_096;
   private static final long BLOCK_HEADER_LIMIT_NUM = 100_000;
   private static final long BLOCK_ID_LIMIT_NUM = 1_000_000;
   private static final long TRANSACTION_LIMIT_NUM = 1000;
@@ -1770,7 +1771,8 @@ public class RpcApiService extends RpcService {
       long startNum = request.getStartNum();
       long endNum = request.getEndNum();
 
-      if (endNum > 0 && endNum > startNum && endNum - startNum <= BLOCK_LIMIT_NUM) {
+      if (endNum > 0 && endNum > startNum
+          && endNum - startNum <= RAW_HISTORY_FRAME_BLOCK_LIMIT_NUM) {
         try {
           RawHistoryFrameStreamer.streamByLimitNext(
               chainBaseManager, startNum, endNum - startNum, responseObserver);
@@ -1784,7 +1786,7 @@ public class RpcApiService extends RpcService {
       } else {
         responseObserver.onError(Status.INVALID_ARGUMENT
             .withDescription("endNum must be greater than startNum and span must be <= "
-                + BLOCK_LIMIT_NUM)
+                + RAW_HISTORY_FRAME_BLOCK_LIMIT_NUM)
             .asRuntimeException());
         return;
       }
