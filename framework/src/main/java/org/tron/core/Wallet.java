@@ -215,6 +215,7 @@ import org.tron.core.exception.ZksnarkException;
 import org.tron.core.net.TronNetDelegate;
 import org.tron.core.net.TronNetService;
 import org.tron.core.net.message.adv.TransactionMessage;
+import org.tron.core.services.bulk.CallTargetHistoryWireBuilder;
 import org.tron.core.store.AccountIdIndexStore;
 import org.tron.core.store.AccountStore;
 import org.tron.core.store.AccountTraceStore;
@@ -1938,6 +1939,10 @@ public class Wallet {
     } catch (IOException e) {
       throw new IllegalStateException("failed to encode compact history wire range", e);
     }
+  }
+
+  public BytesMessage getCallTargetHistoryWireByLimitNext(long number, long limit) {
+    return CallTargetHistoryWireBuilder.encodeByLimitNext(chainBaseManager, number, limit);
   }
 
   public CompactBlockTransactionInfoList getCompactBlocksAndTransactionInfoByLimitNext(
