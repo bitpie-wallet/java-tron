@@ -2799,6 +2799,8 @@ public class Wallet {
             .setBlockid(blockCapsule.getBlockId().getByteString())
             .setTransactionIndex(transactionIndex)
             .setStatus(transactionInfo.getResultValue() == 0 ? 1 : 0)
+            .setFee(transactionInfo.getFee())
+            .setErrors(transactionInfo.getResMessage())
             .addAllLog(transactionInfo.getLogList());
         fillTransactionContractContext(
             builder, transactionCapsule.getInstance(), inputContractAddresses, includeAllInput);
@@ -2843,6 +2845,7 @@ public class Wallet {
       TriggerSmartContract trigger = contract.getParameter().unpack(TriggerSmartContract.class);
       ByteString contractAddress = trigger.getContractAddress();
       builder.setToAddress(contractAddress);
+      builder.setValue(trigger.getCallValue());
       if (includeAllInput || inputContractAddresses.contains(contractAddress)) {
         builder.setInput(trigger.getData());
       }

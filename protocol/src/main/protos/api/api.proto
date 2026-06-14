@@ -872,6 +872,9 @@ message TransactionContext {
   bytes input = 9;
   int32 status = 10;
   repeated TransactionInfo.Log log = 11;
+  int64 value = 12;
+  int64 fee = 13;
+  bytes errors = 14;
 }
 message TransactionContextList {
   repeated TransactionContext transaction = 1;
