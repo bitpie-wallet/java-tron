@@ -168,6 +168,90 @@ public class WalletMockTest {
     }
   }
 
+  @Test
+  public void testFillTransactionContractContextWithCreateSmartContract()
+      throws Exception {
+    Wallet wallet = new Wallet();
+    ByteString ownerAddress = ByteString.copyFrom(
+        ByteUtil.hexToBytes("411111111111111111111111111111111111111111"));
+    ByteString createdAddress = ByteString.copyFrom(
+        ByteUtil.hexToBytes("412222222222222222222222222222222222222222"));
+    SmartContractOuterClass.CreateSmartContract createSmartContract =
+        SmartContractOuterClass.CreateSmartContract.newBuilder()
+            .setOwnerAddress(ownerAddress)
+            .setNewContract(SmartContractOuterClass.SmartContract.newBuilder()
+                .setCallValue(123L)
+                .build())
+            .build();
+    TransactionCapsule transactionCapsule = new TransactionCapsule(
+        createSmartContract,
+        Protocol.Transaction.Contract.ContractType.CreateSmartContract);
+    Protocol.TransactionInfo transactionInfo = Protocol.TransactionInfo.newBuilder()
+        .setContractAddress(createdAddress)
+        .build();
+    GrpcAPI.TransactionContext.Builder builder = GrpcAPI.TransactionContext.newBuilder();
+
+    invokeFillTransactionContractContext(
+        wallet, builder, transactionCapsule.getInstance(), transactionInfo, true);
+
+    assertEquals(ownerAddress, builder.getFromAddress());
+    assertEquals(0, builder.getToAddress().size());
+    assertEquals(createdAddress, builder.getContractAddress());
+    assertEquals(0L, builder.getValue());
+    assertEquals(0, builder.getInput().size());
+  }
+
+  @Test
+  public void testFillTransactionContractContextWithTriggerSmartContract()
+      throws Exception {
+    Wallet wallet = new Wallet();
+    ByteString ownerAddress = ByteString.copyFrom(
+        ByteUtil.hexToBytes("411111111111111111111111111111111111111111"));
+    ByteString contractAddress = ByteString.copyFrom(
+        ByteUtil.hexToBytes("412222222222222222222222222222222222222222"));
+    ByteString input = ByteString.copyFrom(ByteUtil.hexToBytes("a9059cbb"));
+    SmartContractOuterClass.TriggerSmartContract triggerSmartContract =
+        SmartContractOuterClass.TriggerSmartContract.newBuilder()
+            .setOwnerAddress(ownerAddress)
+            .setContractAddress(contractAddress)
+            .setCallValue(456L)
+            .setData(input)
+            .build();
+    TransactionCapsule transactionCapsule = new TransactionCapsule(
+        triggerSmartContract,
+        Protocol.Transaction.Contract.ContractType.TriggerSmartContract);
+    GrpcAPI.TransactionContext.Builder builder = GrpcAPI.TransactionContext.newBuilder();
+
+    invokeFillTransactionContractContext(
+        wallet, builder, transactionCapsule.getInstance(),
+        Protocol.TransactionInfo.getDefaultInstance(), true);
+
+    assertEquals(ownerAddress, builder.getFromAddress());
+    assertEquals(contractAddress, builder.getToAddress());
+    assertEquals(contractAddress, builder.getContractAddress());
+    assertEquals(input, builder.getInput());
+    assertEquals(456L, builder.getValue());
+  }
+
+  private void invokeFillTransactionContractContext(
+      Wallet wallet,
+      GrpcAPI.TransactionContext.Builder builder,
+      Protocol.Transaction transaction,
+      Protocol.TransactionInfo transactionInfo,
+      boolean includeAllInput) throws Exception {
+    Method privateMethod = Wallet.class.getDeclaredMethod(
+        "fillTransactionContractContext",
+        GrpcAPI.TransactionContext.Builder.class,
+        Protocol.Transaction.class,
+        Protocol.TransactionInfo.class,
+        java.util.Set.class,
+        boolean.class);
+    privateMethod.setAccessible(true);
+    privateMethod.invoke(
+        wallet, builder, transaction, transactionInfo, java.util.Collections.emptySet(),
+        includeAllInput);
+  }
+
 
   @Test
   public void testBroadcastTxInvalidSigLength() throws Exception {
