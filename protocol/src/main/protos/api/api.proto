@@ -875,6 +875,7 @@ message TransactionContext {
   int64 value = 12;
   int64 fee = 13;
   bytes errors = 14;
+  bytes contractAddress = 15;
 }
 message TransactionContextList {
   repeated TransactionContext transaction = 1;

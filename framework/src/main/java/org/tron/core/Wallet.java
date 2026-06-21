@@ -2813,7 +2813,8 @@ public class Wallet {
             .setErrors(transactionInfo.getResMessage())
             .addAllLog(transactionInfo.getLogList());
         fillTransactionContractContext(
-            builder, transactionCapsule.getInstance(), inputContractAddresses, includeAllInput);
+            builder, transactionCapsule.getInstance(), transactionInfo, inputContractAddresses,
+            includeAllInput);
       }
     }
   }
@@ -2836,6 +2837,7 @@ public class Wallet {
   private void fillTransactionContractContext(
       GrpcAPI.TransactionContext.Builder builder,
       Transaction transaction,
+      TransactionInfo transactionInfo,
       Set<ByteString> inputContractAddresses,
       boolean includeAllInput) {
     if (transaction.getRawData().getContractCount() == 0) {
@@ -2843,27 +2845,46 @@ public class Wallet {
     }
 
     Contract contract = transaction.getRawData().getContract(0);
+
+    ByteString receiptContractAddress = transactionInfo.getContractAddress();
+    if (!receiptContractAddress.isEmpty()) {
+      builder.setContractAddress(receiptContractAddress);
+    }
+
     byte[] ownerAddress = TransactionCapsule.getOwner(contract);
     if (!ArrayUtils.isEmpty(ownerAddress)) {
       builder.setFromAddress(ByteString.copyFrom(ownerAddress));
     }
 
-    if (contract.getType() != ContractType.TriggerSmartContract) {
-      return;
-    }
     try {
-      TriggerSmartContract trigger = contract.getParameter().unpack(TriggerSmartContract.class);
-      ByteString contractAddress = trigger.getContractAddress();
-      builder.setToAddress(contractAddress);
-      builder.setValue(trigger.getCallValue());
-      if (includeAllInput || inputContractAddresses.contains(contractAddress)) {
-        builder.setInput(trigger.getData());
+      switch (contract.getType()) {
+        case TriggerSmartContract:
+          fillTriggerSmartContractContext(builder, contract, inputContractAddresses, includeAllInput);
+          break;
+        default:
+          break;
       }
     } catch (InvalidProtocolBufferException e) {
       logger.debug(
-          "Could not unpack TriggerSmartContract for {}",
+          "Could not unpack transaction contract context for {}",
           ByteArray.toHexString(builder.getTransactionId().toByteArray()),
           e);
+    }
+  }
+
+  private void fillTriggerSmartContractContext(
+      GrpcAPI.TransactionContext.Builder builder,
+      Contract contract,
+      Set<ByteString> inputContractAddresses,
+      boolean includeAllInput) throws InvalidProtocolBufferException {
+    TriggerSmartContract trigger = contract.getParameter().unpack(TriggerSmartContract.class);
+    ByteString contractAddress = trigger.getContractAddress();
+    builder
+        .setToAddress(contractAddress)
+        .setContractAddress(contractAddress)
+        .setValue(trigger.getCallValue());
+    if (includeAllInput || inputContractAddresses.contains(contractAddress)) {
+      builder.setInput(trigger.getData());
     }
   }
 
