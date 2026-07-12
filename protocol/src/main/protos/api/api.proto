@@ -876,6 +876,11 @@ message TransactionContext {
   int64 fee = 13;
   bytes errors = 14;
   bytes contractAddress = 15;
+  optional Transaction.Contract.ContractType contractType = 16;
+  int64 amount = 17;
+  bytes assetName = 18;
+  int64 callTokenValue = 19;
+  int64 tokenId = 20;
 }
 message TransactionContextList {
   repeated TransactionContext transaction = 1;

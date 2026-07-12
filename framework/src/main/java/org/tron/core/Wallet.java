@@ -266,6 +266,7 @@ import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.Protocol.Transaction.Result.code;
 import org.tron.protos.Protocol.TransactionInfo;
 import org.tron.protos.contract.AssetIssueContractOuterClass.AssetIssueContract;
+import org.tron.protos.contract.AssetIssueContractOuterClass.TransferAssetContract;
 import org.tron.protos.contract.BalanceContract;
 import org.tron.protos.contract.BalanceContract.BlockBalanceTrace;
 import org.tron.protos.contract.BalanceContract.TransferContract;
@@ -2835,6 +2836,7 @@ public class Wallet {
     }
 
     Contract contract = transaction.getRawData().getContract(0);
+    builder.setContractType(contract.getType());
 
     ByteString receiptContractAddress = transactionInfo.getContractAddress();
     if (!receiptContractAddress.isEmpty()) {
@@ -2850,6 +2852,15 @@ public class Wallet {
       switch (contract.getType()) {
         case TriggerSmartContract:
           fillTriggerSmartContractContext(builder, contract, inputContractAddresses, includeAllInput);
+          break;
+        case CreateSmartContract:
+          fillCreateSmartContractContext(builder, contract);
+          break;
+        case TransferContract:
+          fillTransferContractContext(builder, contract);
+          break;
+        case TransferAssetContract:
+          fillTransferAssetContractContext(builder, contract);
           break;
         default:
           break;
@@ -2870,12 +2881,47 @@ public class Wallet {
     TriggerSmartContract trigger = contract.getParameter().unpack(TriggerSmartContract.class);
     ByteString contractAddress = trigger.getContractAddress();
     builder
+        .setFromAddress(trigger.getOwnerAddress())
         .setToAddress(contractAddress)
         .setContractAddress(contractAddress)
-        .setValue(trigger.getCallValue());
+        .setValue(trigger.getCallValue())
+        .setCallTokenValue(trigger.getCallTokenValue())
+        .setTokenId(trigger.getTokenId());
     if (includeAllInput || inputContractAddresses.contains(contractAddress)) {
       builder.setInput(trigger.getData());
     }
+  }
+
+  private void fillCreateSmartContractContext(
+      GrpcAPI.TransactionContext.Builder builder,
+      Contract contract) throws InvalidProtocolBufferException {
+    CreateSmartContract create = contract.getParameter().unpack(CreateSmartContract.class);
+    builder
+        .setFromAddress(create.getOwnerAddress())
+        .setValue(create.getNewContract().getCallValue())
+        .setCallTokenValue(create.getCallTokenValue())
+        .setTokenId(create.getTokenId());
+  }
+
+  private void fillTransferContractContext(
+      GrpcAPI.TransactionContext.Builder builder,
+      Contract contract) throws InvalidProtocolBufferException {
+    TransferContract transfer = contract.getParameter().unpack(TransferContract.class);
+    builder
+        .setFromAddress(transfer.getOwnerAddress())
+        .setToAddress(transfer.getToAddress())
+        .setAmount(transfer.getAmount());
+  }
+
+  private void fillTransferAssetContractContext(
+      GrpcAPI.TransactionContext.Builder builder,
+      Contract contract) throws InvalidProtocolBufferException {
+    TransferAssetContract transfer = contract.getParameter().unpack(TransferAssetContract.class);
+    builder
+        .setFromAddress(transfer.getOwnerAddress())
+        .setToAddress(transfer.getToAddress())
+        .setAmount(transfer.getAmount())
+        .setAssetName(transfer.getAssetName());
   }
 
   public Proposal getProposalById(ByteString proposalId) {

@@ -82,6 +82,7 @@ import org.tron.core.zen.address.KeyIo;
 import org.tron.core.zen.address.PaymentAddress;
 import org.tron.core.zen.note.Note;
 import org.tron.protos.Protocol;
+import org.tron.protos.contract.AssetIssueContractOuterClass;
 import org.tron.protos.contract.BalanceContract;
 import org.tron.protos.contract.ShieldContract;
 import org.tron.protos.contract.SmartContractOuterClass;
@@ -182,6 +183,8 @@ public class WalletMockTest {
             .setNewContract(SmartContractOuterClass.SmartContract.newBuilder()
                 .setCallValue(123L)
                 .build())
+            .setCallTokenValue(456L)
+            .setTokenId(1000001L)
             .build();
     TransactionCapsule transactionCapsule = new TransactionCapsule(
         createSmartContract,
@@ -195,9 +198,14 @@ public class WalletMockTest {
         wallet, builder, transactionCapsule.getInstance(), transactionInfo, true);
 
     assertEquals(ownerAddress, builder.getFromAddress());
+    assertTrue(builder.hasContractType());
+    assertEquals(Protocol.Transaction.Contract.ContractType.CreateSmartContract,
+        builder.getContractType());
     assertEquals(0, builder.getToAddress().size());
     assertEquals(createdAddress, builder.getContractAddress());
-    assertEquals(0L, builder.getValue());
+    assertEquals(123L, builder.getValue());
+    assertEquals(456L, builder.getCallTokenValue());
+    assertEquals(1000001L, builder.getTokenId());
     assertEquals(0, builder.getInput().size());
   }
 
@@ -215,6 +223,8 @@ public class WalletMockTest {
             .setOwnerAddress(ownerAddress)
             .setContractAddress(contractAddress)
             .setCallValue(456L)
+            .setCallTokenValue(789L)
+            .setTokenId(1000002L)
             .setData(input)
             .build();
     TransactionCapsule transactionCapsule = new TransactionCapsule(
@@ -227,10 +237,78 @@ public class WalletMockTest {
         Protocol.TransactionInfo.getDefaultInstance(), true);
 
     assertEquals(ownerAddress, builder.getFromAddress());
+    assertTrue(builder.hasContractType());
+    assertEquals(Protocol.Transaction.Contract.ContractType.TriggerSmartContract,
+        builder.getContractType());
     assertEquals(contractAddress, builder.getToAddress());
     assertEquals(contractAddress, builder.getContractAddress());
     assertEquals(input, builder.getInput());
     assertEquals(456L, builder.getValue());
+    assertEquals(789L, builder.getCallTokenValue());
+    assertEquals(1000002L, builder.getTokenId());
+  }
+
+  @Test
+  public void testFillTransactionContractContextWithTransferContract()
+      throws Exception {
+    Wallet wallet = new Wallet();
+    ByteString ownerAddress = ByteString.copyFrom(
+        ByteUtil.hexToBytes("411111111111111111111111111111111111111111"));
+    ByteString toAddress = ByteString.copyFrom(
+        ByteUtil.hexToBytes("412222222222222222222222222222222222222222"));
+    BalanceContract.TransferContract transfer = BalanceContract.TransferContract.newBuilder()
+        .setOwnerAddress(ownerAddress)
+        .setToAddress(toAddress)
+        .setAmount(123456L)
+        .build();
+    TransactionCapsule transactionCapsule = new TransactionCapsule(
+        transfer, Protocol.Transaction.Contract.ContractType.TransferContract);
+    GrpcAPI.TransactionContext.Builder builder = GrpcAPI.TransactionContext.newBuilder();
+
+    invokeFillTransactionContractContext(
+        wallet, builder, transactionCapsule.getInstance(),
+        Protocol.TransactionInfo.getDefaultInstance(), true);
+
+    assertEquals(ownerAddress, builder.getFromAddress());
+    assertTrue(builder.hasContractType());
+    assertEquals(Protocol.Transaction.Contract.ContractType.TransferContract,
+        builder.getContractType());
+    assertEquals(toAddress, builder.getToAddress());
+    assertEquals(123456L, builder.getAmount());
+    assertEquals(0, builder.getAssetName().size());
+  }
+
+  @Test
+  public void testFillTransactionContractContextWithTransferAssetContract()
+      throws Exception {
+    Wallet wallet = new Wallet();
+    ByteString ownerAddress = ByteString.copyFrom(
+        ByteUtil.hexToBytes("411111111111111111111111111111111111111111"));
+    ByteString toAddress = ByteString.copyFrom(
+        ByteUtil.hexToBytes("412222222222222222222222222222222222222222"));
+    ByteString assetName = ByteString.copyFromUtf8("1002000");
+    AssetIssueContractOuterClass.TransferAssetContract transfer =
+        AssetIssueContractOuterClass.TransferAssetContract.newBuilder()
+            .setOwnerAddress(ownerAddress)
+            .setToAddress(toAddress)
+            .setAssetName(assetName)
+            .setAmount(654321L)
+            .build();
+    TransactionCapsule transactionCapsule = new TransactionCapsule(
+        transfer, Protocol.Transaction.Contract.ContractType.TransferAssetContract);
+    GrpcAPI.TransactionContext.Builder builder = GrpcAPI.TransactionContext.newBuilder();
+
+    invokeFillTransactionContractContext(
+        wallet, builder, transactionCapsule.getInstance(),
+        Protocol.TransactionInfo.getDefaultInstance(), true);
+
+    assertEquals(ownerAddress, builder.getFromAddress());
+    assertTrue(builder.hasContractType());
+    assertEquals(Protocol.Transaction.Contract.ContractType.TransferAssetContract,
+        builder.getContractType());
+    assertEquals(toAddress, builder.getToAddress());
+    assertEquals(654321L, builder.getAmount());
+    assertEquals(assetName, builder.getAssetName());
   }
 
   private void invokeFillTransactionContractContext(
